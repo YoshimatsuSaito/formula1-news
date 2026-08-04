@@ -33,7 +33,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
+      # Change sets are never deleted automatically, and this workflow used to run
+      # `cloudformation deploy` on every scheduled tick (every 30 min), creating a new
+      # change set each time even when the template hadn't changed. That eventually hit
+      # CloudFormation's per-stack change set limit and started failing the whole workflow.
+      # Only deploy the stack when the template could actually have changed.
+      - name: Delete old CloudFormation change sets
+        if: github.event_name != 'schedule'
+        run: |
+          aws cloudformation list-change-sets --stack-name "$STACK_NAME" \
+            --query 'Summaries[].ChangeSetId' --output text 2>/dev/null |
+          tr '\t' '\n' | while read -r CS_ID; do
+            [ -n "$CS_ID" ] && aws cloudformation delete-change-set \
+              --stack-name "$STACK_NAME" --change-set-name "$CS_ID"
+          done
+
       - name: Deploy CloudFormation stack
+        if: github.event_name != 'schedule'
         run: |
           # Template is < 51KB and has no packaged artifacts, so CloudFormation
           # uploads it inline — no SAM-managed S3 bucket required.
