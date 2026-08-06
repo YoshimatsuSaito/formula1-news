@@ -39,12 +39,13 @@ GitHub Actions (30分ごと / mainへのpush時)
 | サイト | 方式 |
 |---|---|
 | autosport-japan | HTML scraping |
-| F1-Gate | HTML scraping |
-| F1情報通 | HTML scraping |
 | motorsport.com (JP) | RSS |
-| motorsport.com (EN) | RSS |
+| Shiga Sports F1 | HTML scraping |
 | BBC Sport F1 | RSS |
 | Sky Sports F1 | HTML scraping |
+| motorsport.com (EN) | RSS |
+| F1-Gate | HTML scraping |
+| F1情報通 | RSS |
 
 ## 構成
 
