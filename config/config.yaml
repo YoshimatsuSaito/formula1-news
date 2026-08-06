@@ -1,5 +1,4 @@
 sites:
-  # --- HTML scraping (plain HTML, no JS rendering required) ---
   autosport-japan:
     source: html
     prefix_home: ""
@@ -8,6 +7,41 @@ sites:
     get_title: "lambda x: x.get_text(strip=True)"
     scrape_link: "ul.news-list li a[href]"
     get_link: "lambda x: x['href']"
+
+  motorsport-jp:
+    source: rss
+    news_home: "https://jp.motorsport.com/f1/news/"
+    rss_url: "https://jp.motorsport.com/rss/f1/news/"
+
+  shigasports:
+    source: html
+    prefix_home: ""
+    news_home: "https://shigasports.com/f1news/"
+    scrape_title: "#archive-container .entry-title a"
+    get_title: "lambda x: x.get_text(strip=True)"
+    scrape_link: "#archive-container .entry-title a"
+    get_link: "lambda x: x['href']"
+
+  BBC:
+    source: rss
+    news_home: "https://www.bbc.com/sport/formula1"
+    rss_url: "https://feeds.bbci.co.uk/sport/formula1/rss.xml"
+
+  skysports:
+    # rss/12040.xml は廃止済み → HTML scraping にフォールバック
+    # JS描画の場合は 0件スキップになるが 404エラーは出なくなる
+    source: html
+    prefix_home: "https://www.skysports.com"
+    news_home: "https://www.skysports.com/f1/news"
+    scrape_title: "a.sdc-site-tile__headline-link span.sdc-site-tile__headline-text"
+    get_title: "lambda x: x.get_text(strip=True)"
+    scrape_link: "a.sdc-site-tile__headline-link"
+    get_link: "lambda x: x['href'] if x.has_attr('href') else ''"
+
+  motorsport-en:
+    source: rss
+    news_home: "https://www.motorsport.com/f1/news/"
+    rss_url: "https://www.motorsport.com/rss/f1/news/"
 
   F1-Gate:
     # RSS feed (/feed/) は存在しない（WordPress形式でないため）→ HTML scraping
@@ -25,30 +59,3 @@ sites:
     source: rss
     news_home: "http://f1jouhou2.blog.fc2.com"
     rss_url: "http://f1jouhou2.blog.fc2.com/?xml"
-
-  # --- RSS feeds (JS-rendered sites → use RSS for reliability) ---
-  motorsport-jp:
-    source: rss
-    news_home: "https://jp.motorsport.com/f1/news/"
-    rss_url: "https://jp.motorsport.com/rss/f1/news/"
-
-  motorsport-en:
-    source: rss
-    news_home: "https://www.motorsport.com/f1/news/"
-    rss_url: "https://www.motorsport.com/rss/f1/news/"
-
-  BBC:
-    source: rss
-    news_home: "https://www.bbc.com/sport/formula1"
-    rss_url: "https://feeds.bbci.co.uk/sport/formula1/rss.xml"
-
-  skysports:
-    # rss/12040.xml は廃止済み → HTML scraping にフォールバック
-    # JS描画の場合は 0件スキップになるが 404エラーは出なくなる
-    source: html
-    prefix_home: "https://www.skysports.com"
-    news_home: "https://www.skysports.com/f1/news"
-    scrape_title: "a.sdc-site-tile__headline-link span.sdc-site-tile__headline-text"
-    get_title: "lambda x: x.get_text(strip=True)"
-    scrape_link: "a.sdc-site-tile__headline-link"
-    get_link: "lambda x: x['href'] if x.has_attr('href') else ''"
