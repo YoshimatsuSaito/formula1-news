@@ -1,7 +1,8 @@
 name: (temp) Debug fetch shigasports
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [claude/scraping-sites-expansion-9xer1n]
 
 jobs:
   debug:
