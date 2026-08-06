@@ -7,6 +7,15 @@ on:
     - cron: '*/30 * * * *'  # Every 30 minutes
   workflow_dispatch:          # Allow manual trigger from GitHub UI
 
+# Scheduled runs occasionally get stuck waiting for a runner (observed 2026-08-06:
+# 3 consecutive schedule runs sat queued for ~15min before being auto-cancelled,
+# and the schedule stopped firing entirely for several hours afterward). Without
+# this, a stuck run and its successors can pile up competing for runners. Cancel
+# any in-progress run for this workflow as soon as a newer one starts.
+concurrency:
+  group: deploy-f1-news
+  cancel-in-progress: true
+
 permissions:
   id-token: write  # Required for OIDC auth (if using IAM role instead of keys)
   contents: read
@@ -20,6 +29,7 @@ jobs:
   infrastructure:
     name: Deploy infrastructure
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       bucket_name:      ${{ steps.outputs.outputs.bucket_name }}
       website_url:      ${{ steps.outputs.outputs.website_url }}
