@@ -4,7 +4,16 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '*/30 * * * *'  # Every 30 minutes
+    # GitHub's own docs warn that scheduled workflows queued at the top/half
+    # of the hour (:00 / :30) are delayed the most, since that's when load
+    # across all of GitHub Actions peaks. Investigation on 2026-08-07 showed
+    # this workflow, scheduled at */30, was actually firing every ~100min on
+    # average (sometimes gapping 3+ hours) instead of every 30min, because
+    # runs queued at :00/:30 kept getting stuck waiting for a runner or
+    # silently dropped. Firing 4x/hour at off-peak minutes both avoids that
+    # congestion and gives more chances per hour for at least one run to
+    # actually go through.
+    - cron: '8,23,38,53 * * * *'
   workflow_dispatch:          # Allow manual trigger from GitHub UI
 
 # Scheduled runs occasionally get stuck waiting for a runner (observed 2026-08-06:
