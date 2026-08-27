@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup as bs
@@ -92,10 +93,7 @@ def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructur
     r.raise_for_status()
     soup = bs(r.text, "lxml")
     titles = [site.get_title(x) for x in soup.select(site.scrape_title)]
-    links = [
-        f"{site.prefix_home}{site.get_link(x)}"
-        for x in soup.select(site.scrape_link)
-    ]
+    links = [_resolve_link(site, x) for x in soup.select(site.scrape_link)]
 
     # 見出しとサムネイルが同じ記事へ二重にリンクしているサイトがあるため、
     # 空タイトルと重複リンクを落としてから max_num 件に切る
@@ -111,3 +109,10 @@ def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructur
             break
 
     return ResultStructure(name=name, list_link=list_link, list_title=list_title)
+
+
+def _resolve_link(site: SiteStructure, el) -> str:
+    # 相対 href を返すサイトがあるので news_home 基準で絶対 URL にする。
+    # 絶対 URL はそのまま返るため prefix_home 方式のサイトへの影響はない。
+    href = f"{site.prefix_home}{site.get_link(el)}"
+    return urljoin(site.news_home, href) if href else ""
