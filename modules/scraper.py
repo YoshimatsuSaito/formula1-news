@@ -91,11 +91,23 @@ def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructur
     r = requests.get(site.news_home, headers=_HEADERS, timeout=15)
     r.raise_for_status()
     soup = bs(r.text, "lxml")
-    list_title = [site.get_title(x) for x in soup.select(site.scrape_title)]
-    list_link = [
+    titles = [site.get_title(x) for x in soup.select(site.scrape_title)]
+    links = [
         f"{site.prefix_home}{site.get_link(x)}"
         for x in soup.select(site.scrape_link)
     ]
-    return ResultStructure(
-        name=name, list_link=list_link[:max_num], list_title=list_title[:max_num]
-    )
+
+    # 見出しとサムネイルが同じ記事へ二重にリンクしているサイトがあるため、
+    # 空タイトルと重複リンクを落としてから max_num 件に切る
+    # (先に切ると使えない要素で枠が埋まってしまう)
+    list_title, list_link, seen = [], [], set()
+    for title, link in zip(titles, links):
+        if not title or not link or link in seen:
+            continue
+        seen.add(link)
+        list_title.append(title)
+        list_link.append(link)
+        if len(list_link) == max_num:
+            break
+
+    return ResultStructure(name=name, list_link=list_link, list_title=list_title)
