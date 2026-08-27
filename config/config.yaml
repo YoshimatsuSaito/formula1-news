@@ -17,14 +17,15 @@ sites:
     # 旧・携帯向けサイト由来で見出しに class が振られていないため、
     # 記事詳細の URL パターン (`page=news/sp/body&no=<記事ID>`) で拾う。
     # ページによって href が URL エンコードされるため両表記を対象にする。
-    # href は相対の場合があるので prefix_home ではなく urljoin で解決する。
+    # /pc/free/ ではなく /free/ を見るのは、抽出されるリンクも同じ配下になり
+    # スマホで開いたときにモバイル版の記事ページに飛ぶため。
     source: html
     prefix_home: ""
-    news_home: "https://f1sokuho.mopita.com/pc/free/index.php?uid=NULLGWDOCOMO&pass=&page=news/sp/top"
+    news_home: "https://f1sokuho.mopita.com/free/index.php?uid=NULLGWDOCOMO&pass=&page=news/sp/top"
     scrape_title: 'a[href*="news/sp/body"], a[href*="news%2Fsp%2Fbody"]'
     get_title: "lambda x: x.get_text(strip=True)"
     scrape_link: 'a[href*="news/sp/body"], a[href*="news%2Fsp%2Fbody"]'
-    get_link: "lambda x: urljoin('https://f1sokuho.mopita.com/pc/free/index.php', x['href'])"
+    get_link: "lambda x: x['href']"
 
   shigasports:
     source: html

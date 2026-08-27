@@ -1,5 +1,4 @@
 from pathlib import Path
-from urllib.parse import urljoin  # noqa: F401  (config の get_link ラムダから使う)
 
 import yaml
 
