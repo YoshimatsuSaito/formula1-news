@@ -91,7 +91,7 @@ def _child_text(el: ET.Element, tag: str) -> str:
 def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructure:
     r = requests.get(site.news_home, headers=_HEADERS, timeout=15)
     r.raise_for_status()
-    soup = bs(r.text, "lxml")
+    soup = bs(_markup(r), "lxml")
     titles = [site.get_title(x) for x in soup.select(site.scrape_title)]
     links = [_resolve_link(site, x) for x in soup.select(site.scrape_link)]
 
@@ -109,6 +109,16 @@ def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructur
             break
 
     return ResultStructure(name=name, list_link=list_link, list_title=list_title)
+
+
+def _markup(r: requests.Response) -> str | bytes:
+    # HTTP ヘッダに charset が無いと requests は ISO-8859-1 と決め打ちする。
+    # 旧来の携帯向けサイトは Shift_JIS を meta タグでしか宣言しないので、
+    # r.text を使うと日本語の見出しが丸ごと文字化けする。
+    # 宣言が無いときはバイト列のまま渡し、meta charset の解釈を bs4 に任せる。
+    if "charset=" in r.headers.get("Content-Type", "").lower():
+        return r.text
+    return r.content
 
 
 def _resolve_link(site: SiteStructure, el) -> str:
