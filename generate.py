@@ -7,7 +7,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from modules.load_config import load_config
 from modules.schedule import fetch_season_schedule
 from modules.scraper import scrape_news
-from modules.structure import ResultStructure
+from modules.structure import SiteStructure
 from modules.trends import analyze_trends
 
 JST = timezone(timedelta(hours=9))
@@ -16,17 +16,8 @@ JST = timezone(timedelta(hours=9))
 def main() -> None:
     config = load_config(Path("./config/config.yaml"))
 
-    sources = []
-    for name, site_structure in config.items():
-        try:
-            result = scrape_news(name=name, site_structure=site_structure)
-            if not result.is_empty():
-                sources.append(_to_template_source(result, site_structure.news_home))
-                print(f"[OK] {name}: {len(result.list_title)} items")
-            else:
-                print(f"[SKIP] {name}: 0 items")
-        except Exception as e:
-            print(f"[FAIL] {name}: {e}")
+    sources = [_collect(name, site) for name, site in config.items()]
+    fetched = sum(1 for s in sources if s["articles"])
 
     year = datetime.now(JST).year
     schedule = []
@@ -50,20 +41,43 @@ def main() -> None:
     updated_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
     html = _render(sources, schedule, trends, year, updated_at)
     Path("index.html").write_text(html, encoding="utf-8")
-    print(f"\nGenerated index.html ({len(sources)} sources, {updated_at})")
+    print(
+        f"\nGenerated index.html "
+        f"({fetched}/{len(sources)} sources with articles, {updated_at})"
+    )
 
 
-def _to_template_source(result: ResultStructure, url: str) -> dict:
-    key = result.name.lower().replace(" ", "-").replace("/", "-")
-    return {
-        "key":      key,
-        "name":     result.name,
-        "url":      url,
-        "articles": [
+def _collect(name: str, site: SiteStructure) -> dict:
+    """1ソース分の記事を取得する。
+
+    取得に失敗しても枠は残す。ソース名のリンクからサイト自体には飛べるので、
+    項目ごと消えるより「今は取れていない」と分かるほうがよい。
+    """
+    articles: list[dict] = []
+    note = ""
+
+    try:
+        result = scrape_news(name=name, site_structure=site)
+        articles = [
             {"title": t, "link": l}
             for t, l in zip(result.list_title, result.list_link)
             if t and l
-        ],
+        ]
+        if articles:
+            print(f"[OK] {name}: {len(articles)} items")
+        else:
+            note = "記事を取得できませんでした"
+            print(f"[SKIP] {name}: 0 items")
+    except Exception as e:
+        note = "取得に失敗しました"
+        print(f"[FAIL] {name}: {e}")
+
+    return {
+        "key":      name.lower().replace(" ", "-").replace("/", "-"),
+        "name":     name,
+        "url":      site.news_home,
+        "articles": articles,
+        "note":     note,
     }
 
 
