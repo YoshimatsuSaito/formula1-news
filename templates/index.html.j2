@@ -219,6 +219,20 @@
       color: var(--muted);
     }
 
+    /* 取得できなかったソース。枠は残すので、サイトへは飛べる */
+    .source-empty {
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--muted);
+      padding: 10px 0 4px;
+    }
+    .source-empty a {
+      color: var(--red);
+      text-decoration: none;
+      font-weight: 700;
+    }
+    .source-empty a:hover { text-decoration: underline; }
+
     /* ── Article list ────────────────────────────────────────── */
     .article-list {
       list-style: none;
@@ -599,6 +613,7 @@
       <a class="source-name" href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.name }}</a>
       <span class="source-count">{{ source.articles | length }}</span>
     </div>
+    {% if source.articles %}
     <ol class="article-list">
       {% for article in source.articles %}
       <li class="article-item">
@@ -607,6 +622,12 @@
       </li>
       {% endfor %}
     </ol>
+    {% else %}
+    <p class="source-empty">
+      {{ source.note }}<br>
+      <a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.name }} を開く</a>
+    </p>
+    {% endif %}
   </div>
   {% endfor %}
 </main>
