@@ -58,16 +58,17 @@ sites:
     # F1専門ではなくモータースポーツ全般のカテゴリなので、
     # スーパーGT/タイヤ関連など F1 以外の記事も多く混ざる。
     #
-    # アンカーが「カテゴリ名・日時・タイトル」を全て囲っているため、
+    # アンカーが「カテゴリ名・日時・タイトル・本文要約」を全て囲っているため、
     # get_text(strip=True) だと
     #   モータースポーツ／エンタメ2026.8.27 Thu 20:30XCRスプリントカップ…
-    # のように連結されてしまう。タイトルは最後のテキストノードなので、
-    # 改行区切りで取り出して末尾だけを使う。
+    # のように連結されてしまう。改行区切りにすると
+    #   [カテゴリ名, 日時, タイトル, 本文要約] の順に並ぶので3番目を使う。
+    # (末尾を取ると本文要約になってしまうので注意)
     source: html
     prefix_home: ""
     news_home: "https://response.jp/category/sport_entame/motorsport/latest/"
     scrape_title: 'a[href*="/article/"][href$=".html"]'
-    get_title: 'lambda x: x.get_text("\n", strip=True).split("\n")[-1]'
+    get_title: 'lambda x: (lambda p: p[2] if len(p) > 2 else p[-1])(x.get_text("\n", strip=True).split("\n"))'
     scrape_link: 'a[href*="/article/"][href$=".html"]'
     get_link: "lambda x: x['href']"
 
