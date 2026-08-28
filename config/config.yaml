@@ -23,26 +23,19 @@ sites:
     get_link: "lambda x: x['href']"
 
   TopNews:
-    # 記事URLは /YYYY/MM/DD/news/f1/<sub>/<id>.html 形式。
-    # カテゴリページ (/category/news/f1) と区別するため .html で絞る。
-    source: html
-    prefix_home: ""
+    # HTML scraping は GitHub Actions から 429 (Too Many Requests) を返される
+    # ため RSS に切替（F1情報通 と同じ事情）
+    source: rss
     news_home: "https://topnews.jp/category/news/f1"
-    scrape_title: 'a[href*="/news/f1/"][href$=".html"]'
-    get_title: "lambda x: x.get_text(strip=True)"
-    scrape_link: 'a[href*="/news/f1/"][href$=".html"]'
-    get_link: "lambda x: x['href']"
+    rss_url: "https://topnews.jp/feed"
 
   Formula1-Data:
-    # 記事URLは /article/<slug>。一覧ページ自身は /article (末尾スラッシュ無し)
-    # なので、/article/ を含む条件で記事リンクだけが引っかかる。
-    source: html
-    prefix_home: ""
+    # 記事もカテゴリメニューも同じ /article/<slug> 形式で、CSS では区別できない。
+    # 実際 HTML scraping では10件中8件がメニュー項目(「F1」「インディカー」等)に
+    # なってしまったため RSS に切替。
+    source: rss
     news_home: "https://formula1-data.com/article"
-    scrape_title: 'a[href*="/article/"]'
-    get_title: "lambda x: x.get_text(strip=True)"
-    scrape_link: 'a[href*="/article/"]'
-    get_link: "lambda x: x['href']"
+    rss_url: "https://formula1-data.com/feed"
 
   Sportiva:
     # 記事URLは /clm/motorsports/motorsports/YYYY/MM/DD/<slug>/ 形式。
@@ -61,16 +54,10 @@ sites:
     news_home: "https://f1sns.com/"
     rss_url: "https://f1sns.com/feed/"
 
-  レスポンス:
-    # F1専門ではなくモータースポーツ全般のカテゴリなので、
-    # スーパーGT/WEC など F1 以外の記事も混ざる
-    source: html
-    prefix_home: ""
-    news_home: "https://response.jp/category/sport_entame/motorsport/latest/"
-    scrape_title: 'a[href*="/article/"][href$=".html"]'
-    get_title: "lambda x: x.get_text(strip=True)"
-    scrape_link: 'a[href*="/article/"][href$=".html"]'
-    get_link: "lambda x: x['href']"
+  # レスポンス (response.jp) は #20 で追加したが削除した。
+  # モータースポーツ全般のカテゴリで、実測では取得した10件すべてが
+  # タイヤ/スーパーGT/business 系で F1 記事は0件だった。
+  # 加えて見出しにカテゴリ名と日時が前置される形式で読みにくい。
 
   shigasports:
     source: html
