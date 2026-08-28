@@ -40,6 +40,11 @@ GitHub Actions (30分ごと / mainへのpush時)
 |---|---|
 | motorsport.com (JP) | RSS |
 | F1速報 (F速) | HTML scraping |
+| TopNews | HTML scraping |
+| Formula1-Data | HTML scraping |
+| web Sportiva (集英社) | HTML scraping |
+| F1SNS日本語訳 | RSS |
+| レスポンス | HTML scraping |
 | Shiga Sports F1 | HTML scraping |
 | BBC Sport F1 | RSS |
 | Sky Sports F1 | HTML scraping |

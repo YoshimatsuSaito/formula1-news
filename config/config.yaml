@@ -22,6 +22,56 @@ sites:
     scrape_link: 'a[href*="news/sp/body"], a[href*="news%2Fsp%2Fbody"]'
     get_link: "lambda x: x['href']"
 
+  TopNews:
+    # 記事URLは /YYYY/MM/DD/news/f1/<sub>/<id>.html 形式。
+    # カテゴリページ (/category/news/f1) と区別するため .html で絞る。
+    source: html
+    prefix_home: ""
+    news_home: "https://topnews.jp/category/news/f1"
+    scrape_title: 'a[href*="/news/f1/"][href$=".html"]'
+    get_title: "lambda x: x.get_text(strip=True)"
+    scrape_link: 'a[href*="/news/f1/"][href$=".html"]'
+    get_link: "lambda x: x['href']"
+
+  Formula1-Data:
+    # 記事URLは /article/<slug>。一覧ページ自身は /article (末尾スラッシュ無し)
+    # なので、/article/ を含む条件で記事リンクだけが引っかかる。
+    source: html
+    prefix_home: ""
+    news_home: "https://formula1-data.com/article"
+    scrape_title: 'a[href*="/article/"]'
+    get_title: "lambda x: x.get_text(strip=True)"
+    scrape_link: 'a[href*="/article/"]'
+    get_link: "lambda x: x['href']"
+
+  Sportiva:
+    # 記事URLは /clm/motorsports/motorsports/YYYY/MM/DD/<slug>/ 形式。
+    # 日付セグメントで絞ってカテゴリページ (.../f1/ 等) を除外する。
+    source: html
+    prefix_home: ""
+    news_home: "https://sportiva.shueisha.co.jp/clm/motorsports/motorsports/f1/"
+    scrape_title: 'a[href*="/clm/motorsports/motorsports/20"]'
+    get_title: "lambda x: x.get_text(strip=True)"
+    scrape_link: 'a[href*="/clm/motorsports/motorsports/20"]'
+    get_link: "lambda x: x['href']"
+
+  F1SNS:
+    # 記事URLが /<記事ID>/ 形式の WordPress なので標準の /feed/ を使う
+    source: rss
+    news_home: "https://f1sns.com/"
+    rss_url: "https://f1sns.com/feed/"
+
+  レスポンス:
+    # F1専門ではなくモータースポーツ全般のカテゴリなので、
+    # スーパーGT/WEC など F1 以外の記事も混ざる
+    source: html
+    prefix_home: ""
+    news_home: "https://response.jp/category/sport_entame/motorsport/latest/"
+    scrape_title: 'a[href*="/article/"][href$=".html"]'
+    get_title: "lambda x: x.get_text(strip=True)"
+    scrape_link: 'a[href*="/article/"][href$=".html"]'
+    get_link: "lambda x: x['href']"
+
   shigasports:
     source: html
     prefix_home: ""
