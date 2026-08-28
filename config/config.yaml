@@ -1,12 +1,7 @@
 sites:
-  autosport-japan:
-    source: html
-    prefix_home: ""
-    news_home: "https://www.as-web.jp/f1/news"
-    scrape_title: ".news-list .title"
-    get_title: "lambda x: x.get_text(strip=True)"
-    scrape_link: "ul.news-list li a[href]"
-    get_link: "lambda x: x['href']"
+  # autosport-japan (as-web.jp) は削除した。F1速報 が同じ三栄の発行で
+  # autosport web の記事を転載しており、見出しの実測で 8/10 が重複していた。
+  # 残る差分も F1速報 側の掲載タイミングのずれによるもので、内容の傾向は同じ。
 
   motorsport-jp:
     source: rss
