@@ -54,10 +54,22 @@ sites:
     news_home: "https://f1sns.com/"
     rss_url: "https://f1sns.com/feed/"
 
-  # レスポンス (response.jp) は #20 で追加したが削除した。
-  # モータースポーツ全般のカテゴリで、実測では取得した10件すべてが
-  # タイヤ/スーパーGT/business 系で F1 記事は0件だった。
-  # 加えて見出しにカテゴリ名と日時が前置される形式で読みにくい。
+  レスポンス:
+    # F1専門ではなくモータースポーツ全般のカテゴリなので、
+    # スーパーGT/タイヤ関連など F1 以外の記事も多く混ざる。
+    #
+    # アンカーが「カテゴリ名・日時・タイトル」を全て囲っているため、
+    # get_text(strip=True) だと
+    #   モータースポーツ／エンタメ2026.8.27 Thu 20:30XCRスプリントカップ…
+    # のように連結されてしまう。タイトルは最後のテキストノードなので、
+    # 改行区切りで取り出して末尾だけを使う。
+    source: html
+    prefix_home: ""
+    news_home: "https://response.jp/category/sport_entame/motorsport/latest/"
+    scrape_title: 'a[href*="/article/"][href$=".html"]'
+    get_title: 'lambda x: x.get_text("\n", strip=True).split("\n")[-1]'
+    scrape_link: 'a[href*="/article/"][href$=".html"]'
+    get_link: "lambda x: x['href']"
 
   shigasports:
     source: html
