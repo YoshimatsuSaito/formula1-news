@@ -1,5 +1,5 @@
 from typing import Callable, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,8 @@ class ResultStructure:
     name: str
     list_title: list[str]
     list_link: list[str]
+    # 掲載日 ("M/D")。取得できない記事は空文字。list_title と同じ長さ
+    list_date: list[str] = field(default_factory=list)
 
     @property
     def dict_title_link(self) -> dict[str, str]:

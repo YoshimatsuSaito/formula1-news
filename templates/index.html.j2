@@ -241,7 +241,8 @@
     .article-item {
       counter-increment: art;
       display: grid;
-      grid-template-columns: 20px 1fr;
+      /* 3列目は掲載日。日付が無い記事では auto が潰れて元の2列と同じ見た目になる */
+      grid-template-columns: 20px 1fr auto;
       gap: 0 8px;
       padding: 6px 0;
       border-bottom: 1px solid var(--line);
@@ -263,6 +264,15 @@
       line-height: 1.45;
     }
     .article-link:hover { color: var(--red); }
+    /* 掲載日。行番号と同じ書体・色で、タイトルの読みを邪魔しない程度に添える */
+    .article-date {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      padding-top: 3px;
+      white-space: nowrap;
+      user-select: none;
+    }
 
     /* ── Trends section ─────────────────────────────────────── */
     .trends-wrap {
@@ -619,6 +629,7 @@
       <li class="article-item">
         <span class="article-num"></span>
         <a class="article-link" href="{{ article.link }}" target="_blank" rel="noopener noreferrer">{{ article.title }}</a>
+        <span class="article-date">{{ article.date }}</span>
       </li>
       {% endfor %}
     </ol>
