@@ -1,5 +1,6 @@
+import re
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
 
@@ -148,22 +149,27 @@ def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructur
     # 見出しとサムネイルが同じ記事へ二重にリンクしているサイトがあるため、
     # 空タイトルと重複リンクを落としてから max_num 件に切る
     # (先に切ると使えない要素で枠が埋まってしまう)
-    list_title, list_link, picked_dates, seen = [], [], [], set()
-    for title, link, raw in zip(titles, links, raw_dates):
+    list_title, list_link, picked_raw, picked_els, seen = [], [], [], [], set()
+    for title, link, raw, el in zip(titles, links, raw_dates, link_els):
         if not title or not link or link in seen:
             continue
         seen.add(link)
         list_title.append(title)
         list_link.append(link)
-        picked_dates.append(raw)
+        picked_raw.append(raw)
+        picked_els.append(el)
         if len(list_link) == max_num:
             break
+
+    # time 要素で取れなかった分だけ、周辺テキストからの読み取りで補う
+    dates = _dates_from_raw(picked_raw)
+    dates = [d or _html_text_date(el) for d, el in zip(dates, picked_els)]
 
     return ResultStructure(
         name=name,
         list_link=list_link,
         list_title=list_title,
-        list_date=_dates_from_raw(picked_dates),
+        list_date=dates,
     )
 
 
@@ -182,6 +188,74 @@ def _html_date(el) -> str:
         found = node.find("time", attrs={"datetime": True})
         if found:
             return found["datetime"]
+        node = node.parent
+    return ""
+
+
+# 一覧ページに書かれる日付表記。time 要素を持たないサイト向けの読み取り用。
+_MONTHS_EN = {
+    m: i
+    for i, m in enumerate(
+        ["jan", "feb", "mar", "apr", "may", "jun",
+         "jul", "aug", "sep", "oct", "nov", "dec"], 1
+    )
+}
+_RE_YMD = re.compile(r"(20\d{2})\s*[年./\-]\s*(\d{1,2})\s*[月./\-]\s*(\d{1,2})")
+_RE_MD_JP = re.compile(r"(\d{1,2})\s*月\s*(\d{1,2})\s*日")
+_RE_DMY_EN = re.compile(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(20\d{2})\b")
+_RE_MDY_EN = re.compile(r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(20\d{2})\b")
+
+
+def _parse_text_date(text: str) -> date | None:
+    """「2026年8月30日」「8月30日」「30 August 2026」等の表記を日付にする。"""
+    m = _RE_YMD.search(text)
+    if m:
+        return _safe_date(int(m[1]), int(m[2]), int(m[3]))
+
+    m = _RE_DMY_EN.search(text)
+    if m and m[2][:3].lower() in _MONTHS_EN:
+        return _safe_date(int(m[3]), _MONTHS_EN[m[2][:3].lower()], int(m[1]))
+
+    m = _RE_MDY_EN.search(text)
+    if m and m[1][:3].lower() in _MONTHS_EN:
+        return _safe_date(int(m[3]), _MONTHS_EN[m[1][:3].lower()], int(m[2]))
+
+    # 年が無い表記。今年として解釈し、未来になりすぎるなら前年とみなす
+    # (年をまたいだ直後に前年12月の記事を今年扱いしないため)
+    m = _RE_MD_JP.search(text)
+    if m:
+        today = datetime.now(_JST).date()
+        d = _safe_date(today.year, int(m[1]), int(m[2]))
+        if d and d > today + timedelta(days=30):
+            d = _safe_date(today.year - 1, int(m[1]), int(m[2]))
+        return d
+    return None
+
+
+def _safe_date(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
+    except ValueError:  # 2月30日 のような無効な組み合わせ
+        return None
+
+
+def _html_text_date(el) -> str:
+    """time 要素を持たないサイト向けに、リンク周辺のテキストから日付を読む。
+
+    記事タイトル自体は除いて周囲だけを見る。「8月29日開催」のように
+    タイトルに含まれる日付を掲載日と取り違えないため。
+    """
+    own = el.get_text(" ", strip=True)
+    node = el.parent
+    for _ in range(2):
+        if node is None:
+            break
+        text = node.get_text(" ", strip=True)
+        if own:
+            text = text.replace(own, " ")
+        found = _parse_text_date(text)
+        if found:
+            return f"{found.month}/{found.day}"
         node = node.parent
     return ""
 
