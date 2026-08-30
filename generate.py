@@ -58,9 +58,11 @@ def _collect(name: str, site: SiteStructure) -> dict:
 
     try:
         result = scrape_news(name=name, site_structure=site)
+        # 掲載日が取れないソースもあるので、足りない分は空文字で埋めて揃える
+        dates = result.list_date + [""] * (len(result.list_title) - len(result.list_date))
         articles = [
-            {"title": t, "link": l}
-            for t, l in zip(result.list_title, result.list_link)
+            {"title": t, "link": l, "date": d}
+            for t, l, d in zip(result.list_title, result.list_link, dates)
             if t and l
         ]
         if articles:
