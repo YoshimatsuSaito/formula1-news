@@ -40,6 +40,7 @@ def main() -> None:
 
     updated_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
     html = _render(sources, schedule, trends, year, updated_at)
+
     Path("index.html").write_text(html, encoding="utf-8")
     print(
         f"\nGenerated index.html "
@@ -98,6 +99,8 @@ def _render(
     return template.render(
         sources=sources,
         source_keys_json=json.dumps([s["key"] for s in sources]),
+        # 掲載日がこれと一致する記事を「本日分」として強調する
+        today=datetime.now(JST).strftime("%-m/%-d"),
         schedule=schedule,
         trends=trends,
         current_year=year,
