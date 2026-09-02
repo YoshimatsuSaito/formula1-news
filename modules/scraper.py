@@ -162,9 +162,12 @@ def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructur
         if len(list_link) == max_num:
             break
 
-    # time 要素で取れなかった分だけ、周辺テキストからの読み取りで補う
+    # time 要素で取れなかった分を、周辺テキスト → 日付見出しの順に補う
     dates = _dates_from_raw(picked_raw)
-    dates = [d or _html_text_date(el) for d, el in zip(dates, picked_els)]
+    dates = [
+        d or _html_text_date(el) or _heading_date(el)
+        for d, el in zip(dates, picked_els)
+    ]
 
     return ResultStructure(
         name=name,
@@ -221,16 +224,22 @@ def _parse_text_date(text: str) -> date | None:
     if m and m[1][:3].lower() in _MONTHS_EN:
         return _safe_date(int(m[3]), _MONTHS_EN[m[1][:3].lower()], int(m[2]))
 
-    # 年が無い表記。今年として解釈し、未来になりすぎるなら前年とみなす
-    # (年をまたいだ直後に前年12月の記事を今年扱いしないため)
     m = _RE_MD_JP.search(text)
     if m:
-        today = datetime.now(_JST).date()
-        d = _safe_date(today.year, int(m[1]), int(m[2]))
-        if d and d > today + timedelta(days=30):
-            d = _safe_date(today.year - 1, int(m[1]), int(m[2]))
-        return d
+        return _year_guess(int(m[1]), int(m[2]))
     return None
+
+
+def _year_guess(month: int, day: int) -> date | None:
+    """年の無い月日を補う。今年として解釈し、未来になりすぎるなら前年とみなす。
+
+    年をまたいだ直後に前年12月の記事を今年扱いしないための処理。
+    """
+    today = datetime.now(_JST).date()
+    d = _safe_date(today.year, month, day)
+    if d and d > today + timedelta(days=30):
+        d = _safe_date(today.year - 1, month, day)
+    return d
 
 
 def _safe_date(year: int, month: int, day: int) -> date | None:
@@ -259,6 +268,37 @@ def _html_text_date(el) -> str:
             return found.isoformat()
         node = node.parent
     return ""
+
+
+# 「9/2更新」のような、年もなく月日だけの見出し。本文中の "9/2" のような
+# 数字を拾わないよう、見出しの短い文字列全体に一致する場合だけ認める
+_RE_MD_SLASH = re.compile(r"^\D{0,4}(\d{1,2})\s*/\s*(\d{1,2})\D{0,6}$")
+_HEADING_LOOKBACK = 5
+
+
+def _heading_date(el) -> str:
+    """日付ごとに記事をまとめる見出しから掲載日を読む。
+
+    F1速報 のように、記事リンク自体は日付を持たず一覧が
+    ``<h2>9/2更新</h2>`` のような見出しで日付ごとに区切られている
+    構造がある。祖先を辿っても見つからないので、文書順で直前にある
+    見出しを遡って探す。
+    """
+    for prev in el.find_all_previous(
+        ["h1", "h2", "h3", "h4", "h5", "h6"], limit=_HEADING_LOOKBACK
+    ):
+        found = _parse_heading_date(prev.get_text(" ", strip=True))
+        if found:
+            return found.isoformat()
+    return ""
+
+
+def _parse_heading_date(text: str) -> date | None:
+    found = _parse_text_date(text)
+    if found:
+        return found
+    m = _RE_MD_SLASH.match(text)
+    return _year_guess(int(m[1]), int(m[2])) if m else None
 
 
 def _dates_from_raw(raw_dates: list[str]) -> list[str]:
