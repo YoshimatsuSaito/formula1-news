@@ -1,0 +1,36 @@
+name: Inspect source HTML
+
+# スクレイピング対象サイトの HTML を実際に取得してログに出す診断用ワークフロー。
+# 開発環境から対象サイトへ到達できないことがあるため、Actions のネットワークを
+# 借りて「掲載日がページのどこに書かれているか」等を確認するのに使う。
+# 手動実行のみ。デプロイには一切関与しない。
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: '調べるソース名（カンマ区切り。例: F1速報,skysports）'
+        required: true
+        default: 'F1速報,skysports'
+
+jobs:
+  inspect:
+    name: Fetch and dump HTML
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Inspect
+        # 入力は env 経由で渡す（run に直接埋めるとスクリプト実行の余地ができる）
+        env:
+          SOURCES: ${{ inputs.sources }}
+        run: python tools/inspect_source.py "$SOURCES"
