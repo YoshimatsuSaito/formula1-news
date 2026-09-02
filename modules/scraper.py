@@ -112,10 +112,11 @@ def _child_text(el: ET.Element, tag: str) -> str:
 
 
 def _fmt_date(raw: str) -> str:
-    """配信日時を JST の "M/D" に整形する。解釈できなければ空文字。
+    """配信日時を JST の "YYYY-MM-DD" にする。解釈できなければ空文字。
 
     Atom / dc:date は ISO8601、RSS2 の pubDate は RFC822 と形式が違うので
-    両方試す。表示は日付だけにして、どのソースでも同じ見え方に揃える。
+    両方試す。年まで残すのは、記事やソースを日付順に並べるときに
+    年をまたいだ比較が必要になるため。表示用の "M/D" への変換は呼び出し側で行う。
     """
     raw = (raw or "").strip()
     if not raw:
@@ -134,7 +135,7 @@ def _fmt_date(raw: str) -> str:
     # タイムゾーンの無い日時は UTC とみなす（JST に寄せると未来日付になりうる）
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(_JST).strftime("%-m/%-d")
+    return dt.astimezone(_JST).strftime("%Y-%m-%d")
 
 
 def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructure:
@@ -255,7 +256,7 @@ def _html_text_date(el) -> str:
             text = text.replace(own, " ")
         found = _parse_text_date(text)
         if found:
-            return f"{found.month}/{found.day}"
+            return found.isoformat()
         node = node.parent
     return ""
 

@@ -19,6 +19,10 @@ def main() -> None:
     sources = [_collect(name, site) for name, site in config.items()]
     fetched = sum(1 for s in sources if s["articles"])
 
+    # 更新が新しいソースほど上に出す。掲載日が読めないソースは新しさが
+    # 判断できないので、config の並び順のまま末尾へ回す
+    sources.sort(key=lambda s: _newest(s), reverse=True)
+
     year = datetime.now(JST).year
     schedule = []
     try:
@@ -62,10 +66,14 @@ def _collect(name: str, site: SiteStructure) -> dict:
         # 掲載日が取れないソースもあるので、足りない分は空文字で埋めて揃える
         dates = result.list_date + [""] * (len(result.list_title) - len(result.list_date))
         articles = [
-            {"title": t, "link": l, "date": d}
+            {"title": t, "link": l, "iso": d, "date": _display_date(d)}
             for t, l, d in zip(result.list_title, result.list_link, dates)
             if t and l
         ]
+        # サイト側の並びが日付順とは限らないので、新しい記事を上にする。
+        # 掲載日が読めない記事は空文字が最小となり末尾へ回る
+        # (ソートは安定なので、日付が同じ記事や全件日付なしの場合は元の並びを保つ)
+        articles.sort(key=lambda a: a["iso"], reverse=True)
         if articles:
             print(f"[OK] {name}: {len(articles)} items")
         else:
@@ -84,6 +92,19 @@ def _collect(name: str, site: SiteStructure) -> dict:
     }
 
 
+def _display_date(iso: str) -> str:
+    """"2026-08-30" を表示用の "8/30" にする。空文字はそのまま。"""
+    if not iso:
+        return ""
+    _, month, day = iso.split("-")
+    return f"{int(month)}/{int(day)}"
+
+
+def _newest(source: dict) -> str:
+    """ソート用に、そのソースで最も新しい掲載日 (ISO) を返す。"""
+    return max((a["iso"] for a in source["articles"]), default="")
+
+
 def _render(
     sources: list[dict],
     schedule: list[dict],
@@ -100,7 +121,7 @@ def _render(
         sources=sources,
         source_keys_json=json.dumps([s["key"] for s in sources]),
         # 掲載日がこれと一致する記事を「本日分」として強調する
-        today=datetime.now(JST).strftime("%-m/%-d"),
+        today=datetime.now(JST).strftime("%Y-%m-%d"),
         schedule=schedule,
         trends=trends,
         current_year=year,
