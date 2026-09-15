@@ -1,27 +1,14 @@
 name: Deploy F1 News to S3
 
+# 定期更新は EventBridge + Lambda が担う（template.yaml 参照）。
+# GitHub の schedule はイベント自体が配信されず更新間隔を制御できなかった
+# （実測で配信率 13.7%、5分ごとに増やしても3時間15分で配信0件）。
+# このワークフローの役割はコードを配ることだけで、定期実行には関与しない。
 on:
   push:
     branches: [main]
-  schedule:
-    # GitHub はスケジュールイベントをかなりの割合で捨てる。
-    # 2026-09-15 の実測（15日/200実行）では、4回/時を要求して実際に発火したのは
-    # 13.7% だけだった。発火したものは待ち時間 0 分で即実行できているので、
-    # ランナー不足ではなくイベント自体が届いていない。
-    # 発火率は UTC 02-03時 の 4.9% から UTC 23時 の 27.9% まで時間帯で変動し、
-    # GitHub 全体の負荷と相関している。
-    #
-    # 2026-09-15 に 4回/時 → 5分ごと（12回/時）へ増やして検証したが、
-    # 直後の 3時間15分 で配信は 0 件だった（本来なら39回）。要求回数を3倍に
-    # しても配信数は増えず、リポジトリ単位の配信上限があると見られる。
-    # したがって cron の調整では解決しない。スケジュールは「たまに来る
-    # きっかけ」と割り切り、実際の更新間隔は下の content ジョブのループで作る。
-    - cron: '*/5 * * * *'
-  workflow_dispatch:          # Allow manual trigger from GitHub UI
+  workflow_dispatch:          # 手動でスタック更新とコード配布をやり直す用
 
-# 後続の実行が始まったら、走っている実行は止める。
-# content ジョブは一定時間ループして更新し続けるので（下の LOOP_MINUTES 参照）、
-# 新しい実行が来たらそちらに任せて古いループは畳む。
 concurrency:
   group: deploy-f1-news
   cancel-in-progress: true
@@ -54,13 +41,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      # Change sets are never deleted automatically, and this workflow used to run
-      # `cloudformation deploy` on every scheduled tick (every 30 min), creating a new
-      # change set each time even when the template hadn't changed. That eventually hit
-      # CloudFormation's per-stack change set limit and started failing the whole workflow.
-      # Only deploy the stack when the template could actually have changed.
+      # change set は自動では消えないため、積もるとスタックの上限に達して
+      # デプロイが失敗する。このワークフローは push 時だけ動くので頻度は低いが、
+      # 念のため毎回古いものを掃除しておく。
       - name: Delete old CloudFormation change sets
-        if: github.event_name != 'schedule'
         run: |
           aws cloudformation list-change-sets --stack-name "$STACK_NAME" \
             --query 'Summaries[].ChangeSetId' --output text 2>/dev/null |
@@ -70,7 +54,6 @@ jobs:
           done
 
       - name: Deploy CloudFormation stack
-        if: github.event_name != 'schedule'
         run: |
           # Template is < 51KB and has no packaged artifacts, so CloudFormation
           # uploads it inline — no SAM-managed S3 bucket required.
@@ -99,12 +82,11 @@ jobs:
 
   # ── Job 2: 定期実行される Lambda のコードを更新 ─────────────────────────────
   # 定期実行は EventBridge が担うので、この job は「中身を配る」だけ。
-  # schedule 実行時にやることは無いので走らせない。
+  # 最後に invoke するので、push のたびにページも最新になる。
   scraper:
     name: Package & deploy scraper
     runs-on: ubuntu-latest
     needs: infrastructure
-    if: github.event_name != 'schedule'
     timeout-minutes: 10
 
     steps:
@@ -168,71 +150,3 @@ jobs:
             echo "::error::Lambda がエラーを返しました"
             exit 1
           fi
-
-  # ── Job 3: Scrape news, generate HTML, upload to S3 ────────────────────────
-  content:
-    name: Generate & upload content
-    runs-on: ubuntu-latest
-    needs: infrastructure
-    # 下の LOOP_MINUTES より長くしておく（ジョブの上限は 6 時間 = 360分）
-    timeout-minutes: 355
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      # スケジュールが届かない分を、1回の実行を持続させることで埋める。
-      # 発火が平均1.8時間に1回しか来なくても、来た実行が LOOP_MINUTES のあいだ
-      # INTERVAL_MINUTES ごとに更新し続けるので、実際の更新間隔はそちらで決まる。
-      # 新しい実行が来た時点で concurrency によりこのループは打ち切られる。
-      - name: Generate and upload on a loop
-        env:
-          BUCKET:           ${{ needs.infrastructure.outputs.bucket_name }}
-          WEBSITE_URL:      ${{ needs.infrastructure.outputs.website_url }}
-          INTERVAL_MINUTES: '15'
-          LOOP_MINUTES:     '340'
-        run: |
-          set -uo pipefail
-          echo "Deploying to: $WEBSITE_URL"
-
-          deadline=$(( $(date +%s) + LOOP_MINUTES * 60 ))
-          interval=$(( INTERVAL_MINUTES * 60 ))
-          failed=0
-
-          while :; do
-            echo "::group::$(TZ=Asia/Tokyo date '+%F %H:%M:%S JST') の更新"
-            # 1回の失敗でループごと止めない。generate.py はソース単位で失敗を
-            # 吸収するので、ここまで来る失敗は S3 側や一時的な障害が中心。
-            if python generate.py && aws s3 cp index.html "s3://$BUCKET/index.html" \
-                 --content-type "text/html; charset=utf-8" \
-                 --cache-control "no-cache, max-age=0"; then
-              echo "更新しました"
-            else
-              echo "::warning::この周回の更新に失敗しました。次の周回で再試行します"
-              failed=$(( failed + 1 ))
-            fi
-            echo "::endgroup::"
-
-            # 次の周回が期限内に収まらないなら、次のスケジュール実行に引き継ぐ
-            if [ $(( $(date +%s) + interval )) -ge "$deadline" ]; then
-              echo "LOOP_MINUTES に達したので終了します（次の実行が引き継ぎます）"
-              break
-            fi
-            sleep "$interval"
-          done
-
-          # 全周回が失敗していた場合だけ、実行そのものを失敗にする
-          [ "$failed" -eq 0 ] || echo "::warning::失敗した周回: ${failed}回"
