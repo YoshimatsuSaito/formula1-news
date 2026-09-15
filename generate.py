@@ -12,9 +12,23 @@ from modules.trends import analyze_trends
 
 JST = timezone(timedelta(hours=9))
 
+# Lambda 上ではカレントディレクトリが実行時の作業ディレクトリと一致しないため、
+# 設定とテンプレートはこのファイルからの相対で解決する
+_ROOT = Path(__file__).resolve().parent
+
 
 def main() -> None:
-    config = load_config(Path("./config/config.yaml"))
+    html = build_html()
+    Path("index.html").write_text(html, encoding="utf-8")
+    print("Wrote index.html")
+
+
+def build_html() -> str:
+    """ニュースを収集してページを組み立て、HTML を文字列で返す。
+
+    ファイルに書かずに文字列を返すのは、Lambda から直接 S3 へ渡せるようにするため。
+    """
+    config = load_config(_ROOT / "config" / "config.yaml")
 
     sources = [_collect(name, site) for name, site in config.items()]
     fetched = sum(1 for s in sources if s["articles"])
@@ -44,12 +58,11 @@ def main() -> None:
 
     updated_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
     html = _render(sources, schedule, trends, year, updated_at)
-
-    Path("index.html").write_text(html, encoding="utf-8")
     print(
-        f"\nGenerated index.html "
+        f"\nGenerated HTML "
         f"({fetched}/{len(sources)} sources with articles, {updated_at})"
     )
+    return html
 
 
 def _collect(name: str, site: SiteStructure) -> dict:
@@ -113,7 +126,7 @@ def _render(
     updated_at: str,
 ) -> str:
     env = Environment(
-        loader=FileSystemLoader("templates"),
+        loader=FileSystemLoader(str(_ROOT / "templates")),
         autoescape=select_autoescape(["html"]),
     )
     template = env.get_template("index.html.j2")

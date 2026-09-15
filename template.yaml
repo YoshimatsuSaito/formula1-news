@@ -1,5 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: F1 News static website - S3 static website hosting
+Description: F1 News static website - S3 hosting and the scheduled scraper
+
+Parameters:
+  UpdateIntervalMinutes:
+    Type: Number
+    Default: 15
+    MinValue: 1
+    Description: ページを再生成する間隔（分）
 
 Resources:
 
@@ -34,7 +41,80 @@ Resources:
             Action: s3:GetObject
             Resource: !Sub "${WebsiteBucket.Arn}/*"
 
+  # ── 定期実行するスクレイパー ───────────────────────────────────────────
+  # GitHub Actions の schedule はイベントが配信されず更新間隔が安定しないため
+  # （実測で配信率 13.7%）、定期実行は EventBridge に任せる。
+
+  ScraperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: write-website-object
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${WebsiteBucket.Arn}/*"
+
+  ScraperFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-scraper"
+      Runtime: python3.11
+      Handler: lambda_handler.handler
+      Role: !GetAtt ScraperRole.Arn
+      # 12ソースを順に取りに行くので、遅いサイトがあっても収まる長さにする
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref WebsiteBucket
+      # 実際のコードは CI が update-function-code で差し替える。
+      # スタック作成時点ではコードが存在しないため、ここは置き場所だけ用意する。
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              raise RuntimeError("placeholder: CI がコードを配置していません")
+
+  ScraperSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: F1 News のページを定期的に再生成する
+      ScheduleExpression: !Sub "rate(${UpdateIntervalMinutes} minutes)"
+      State: ENABLED
+      Targets:
+        - Id: scraper
+          Arn: !GetAtt ScraperFunction.Arn
+
+  ScraperSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ScraperFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScraperSchedule.Arn
+
+  # ログを無期限に貯めない
+  ScraperLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-scraper"
+      RetentionInDays: 14
+
 Outputs:
+  ScraperFunctionName:
+    Description: 定期実行されるスクレイパーの Lambda 関数名
+    Value: !Ref ScraperFunction
+
   BucketName:
     Description: S3 bucket name for website content
     Value: !Ref WebsiteBucket
