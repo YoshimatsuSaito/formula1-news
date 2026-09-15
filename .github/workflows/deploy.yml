@@ -43,6 +43,7 @@ jobs:
     outputs:
       bucket_name:      ${{ steps.outputs.outputs.bucket_name }}
       website_url:      ${{ steps.outputs.outputs.website_url }}
+      function_name:    ${{ steps.outputs.outputs.function_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -89,12 +90,86 @@ jobs:
 
           BUCKET=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="BucketName") | .OutputValue')
           URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="WebsiteUrl") | .OutputValue')
+          FUNC=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ScraperFunctionName") | .OutputValue')
 
           echo "bucket_name=$BUCKET"       >> "$GITHUB_OUTPUT"
           echo "website_url=$URL"          >> "$GITHUB_OUTPUT"
+          echo "function_name=$FUNC"       >> "$GITHUB_OUTPUT"
           echo "Website: $URL"
 
-  # ── Job 2: Scrape news, generate HTML, upload to S3 ────────────────────────
+  # ── Job 2: 定期実行される Lambda のコードを更新 ─────────────────────────────
+  # 定期実行は EventBridge が担うので、この job は「中身を配る」だけ。
+  # schedule 実行時にやることは無いので走らせない。
+  scraper:
+    name: Package & deploy scraper
+    runs-on: ubuntu-latest
+    needs: infrastructure
+    if: github.event_name != 'schedule'
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build deployment package
+        run: |
+          set -euo pipefail
+          rm -rf build && mkdir -p build
+          # Lambda の実行環境に合わせたバイナリを選ばせる。lxml はネイティブ拡張
+          # なので、ランナー任せに入れるとアーキテクチャ違いでインポートに失敗する
+          pip install -r requirements.txt \
+            --target build \
+            --platform manylinux2014_x86_64 \
+            --implementation cp \
+            --python-version 3.11 \
+            --only-binary=:all: \
+            --upgrade
+          # boto3 は Lambda ランタイムに同梱されているので入れない
+          cp lambda_handler.py generate.py build/
+          cp -r modules config templates build/
+          find build -name '__pycache__' -type d -prune -exec rm -rf {} +
+          (cd build && zip -qr ../function.zip .)
+          ls -lh function.zip
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Update function code
+        env:
+          FUNC: ${{ needs.infrastructure.outputs.function_name }}
+        run: |
+          aws lambda update-function-code \
+            --function-name "$FUNC" \
+            --zip-file fileb://function.zip \
+            --publish >/dev/null
+          aws lambda wait function-updated --function-name "$FUNC"
+          echo "Updated $FUNC"
+
+      # 配ったコードが実際に動くところまで確認する。ここで失敗すれば
+      # 定期実行に乗る前に気づける
+      - name: Smoke test
+        env:
+          FUNC: ${{ needs.infrastructure.outputs.function_name }}
+        run: |
+          set -euo pipefail
+          aws lambda invoke --function-name "$FUNC" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{}' response.json > invoke.json
+          cat invoke.json
+          echo "--- response ---"
+          cat response.json; echo
+          if jq -e '.FunctionError' invoke.json >/dev/null 2>&1; then
+            echo "::error::Lambda がエラーを返しました"
+            exit 1
+          fi
+
+  # ── Job 3: Scrape news, generate HTML, upload to S3 ────────────────────────
   content:
     name: Generate & upload content
     runs-on: ubuntu-latest
