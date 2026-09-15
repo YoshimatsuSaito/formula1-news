@@ -88,8 +88,9 @@ cron を 5分ごと（12回/時）に増やして検証したが、**直後の 3
   結果を S3 に直接 put する
 - 間隔を変えるときは `template.yaml` の `UpdateIntervalMinutes` を変える
 
-GitHub Actions に残っているのは「コードを配る」役割だけで、定期実行には関与しない。
-main への push 時に CloudFormation スタックを更新し、Lambda のコードを差し替える。
+GitHub Actions に残っているのは「コードを配る」役割だけで、`schedule` トリガは
+削除した。main への push 時に CloudFormation スタックを更新し、Lambda のコードを
+差し替え、最後に invoke して動作確認とページの更新をまとめて行う。
 
 ### Lambda のパッケージング
 
