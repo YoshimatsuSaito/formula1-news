@@ -4,23 +4,22 @@ on:
   push:
     branches: [main]
   schedule:
-    # GitHub's own docs warn that scheduled workflows queued at the top/half
-    # of the hour (:00 / :30) are delayed the most, since that's when load
-    # across all of GitHub Actions peaks. Investigation on 2026-08-07 showed
-    # this workflow, scheduled at */30, was actually firing every ~100min on
-    # average (sometimes gapping 3+ hours) instead of every 30min, because
-    # runs queued at :00/:30 kept getting stuck waiting for a runner or
-    # silently dropped. Firing 4x/hour at off-peak minutes both avoids that
-    # congestion and gives more chances per hour for at least one run to
-    # actually go through.
-    - cron: '8,23,38,53 * * * *'
+    # GitHub はスケジュールイベントをかなりの割合で捨てる。
+    # 2026-09-15 の実測（15日/200実行）では、4回/時を要求して実際に発火したのは
+    # 13.7% だけだった。発火したものは待ち時間 0 分で即実行できているので、
+    # ランナー不足ではなくイベント自体が届いていない。
+    # 発火率は UTC 02-03時 の 4.9% から UTC 23時 の 27.9% まで時間帯で変動し、
+    # GitHub 全体の負荷と相関している。
+    #
+    # こちらから増やせるのは要求回数だけなので、GitHub が許す最短間隔である
+    # 5分ごとにして試行回数を3倍にする。落とされる割合が一定なら実効間隔も
+    # 1/3 になる。1回あたり数十秒のジョブなので、余分に走っても負荷は小さい。
+    - cron: '*/5 * * * *'
   workflow_dispatch:          # Allow manual trigger from GitHub UI
 
-# Scheduled runs occasionally get stuck waiting for a runner (observed 2026-08-06:
-# 3 consecutive schedule runs sat queued for ~15min before being auto-cancelled,
-# and the schedule stopped firing entirely for several hours afterward). Without
-# this, a stuck run and its successors can pile up competing for runners. Cancel
-# any in-progress run for this workflow as soon as a newer one starts.
+# 後続の実行が始まったら、走っている実行は止める。
+# content ジョブは一定時間ループして更新し続けるので（下の LOOP_MINUTES 参照）、
+# 新しい実行が来たらそちらに任せて古いループは畳む。
 concurrency:
   group: deploy-f1-news
   cancel-in-progress: true
@@ -98,7 +97,8 @@ jobs:
     name: Generate & upload content
     runs-on: ubuntu-latest
     needs: infrastructure
-    timeout-minutes: 8
+    # 下の LOOP_MINUTES より長くしておく（ジョブの上限は 6 時間）
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
@@ -111,21 +111,51 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Generate index.html
-        run: python generate.py
-
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Upload to S3
+      # スケジュールが届かない分を、1回の実行を持続させることで埋める。
+      # 発火が平均1.8時間に1回しか来なくても、来た実行が LOOP_MINUTES のあいだ
+      # INTERVAL_MINUTES ごとに更新し続けるので、実際の更新間隔はそちらで決まる。
+      # 新しい実行が来た時点で concurrency によりこのループは打ち切られる。
+      - name: Generate and upload on a loop
+        env:
+          BUCKET:           ${{ needs.infrastructure.outputs.bucket_name }}
+          WEBSITE_URL:      ${{ needs.infrastructure.outputs.website_url }}
+          INTERVAL_MINUTES: '15'
+          LOOP_MINUTES:     '110'
         run: |
-          aws s3 cp index.html s3://${{ needs.infrastructure.outputs.bucket_name }}/index.html \
-            --content-type "text/html; charset=utf-8" \
-            --cache-control "no-cache, max-age=0"
+          set -uo pipefail
+          echo "Deploying to: $WEBSITE_URL"
 
-      - name: Show website URL
-        run: |
-          echo "Deployed: ${{ needs.infrastructure.outputs.website_url }}"
+          deadline=$(( $(date +%s) + LOOP_MINUTES * 60 ))
+          interval=$(( INTERVAL_MINUTES * 60 ))
+          failed=0
+
+          while :; do
+            echo "::group::$(TZ=Asia/Tokyo date '+%F %H:%M:%S JST') の更新"
+            # 1回の失敗でループごと止めない。generate.py はソース単位で失敗を
+            # 吸収するので、ここまで来る失敗は S3 側や一時的な障害が中心。
+            if python generate.py && aws s3 cp index.html "s3://$BUCKET/index.html" \
+                 --content-type "text/html; charset=utf-8" \
+                 --cache-control "no-cache, max-age=0"; then
+              echo "更新しました"
+            else
+              echo "::warning::この周回の更新に失敗しました。次の周回で再試行します"
+              failed=$(( failed + 1 ))
+            fi
+            echo "::endgroup::"
+
+            # 次の周回が期限内に収まらないなら、次のスケジュール実行に引き継ぐ
+            if [ $(( $(date +%s) + interval )) -ge "$deadline" ]; then
+              echo "LOOP_MINUTES に達したので終了します（次の実行が引き継ぎます）"
+              break
+            fi
+            sleep "$interval"
+          done
+
+          # 全周回が失敗していた場合だけ、実行そのものを失敗にする
+          [ "$failed" -eq 0 ] || echo "::warning::失敗した周回: ${failed}回"
