@@ -5,7 +5,7 @@ F1関連ニュースを複数サイトからスクレイピングし、静的サ
 ## 仕組み
 
 ```
-GitHub Actions (30分ごと / mainへのpush時)
+GitHub Actions (15分ごと / mainへのpush時)
   → scrape_news() で各サイトをスクレイピング
   → analyze_trends() で収集タイトルを簡易NLP解析（トレンド算出）
   → generate.py が Jinja2 テンプレートで index.html を生成
@@ -66,6 +66,26 @@ generate.py               # HTML 生成スクリプト
 template.yaml             # CloudFormation (S3バケット定義)
 .github/workflows/deploy.yml  # GitHub Actions ワークフロー
 ```
+
+## 更新間隔について
+
+GitHub はスケジュールイベントをかなりの割合で捨てる。2026-09-15 の実測（15日間・
+200実行）では、4回/時を要求して**実際に発火したのは 13.7%** だった。発火したものは
+待ち時間 0 分で即実行できているので、ランナー不足ではなくイベント自体が届いていない。
+発火率は UTC 02-03時 の 4.9% から UTC 23時 の 27.9% まで時間帯で変動する。
+
+これはこちらから制御できないため、2段構えで対処している。
+
+1. **cron を 5分ごと**（GitHub が許す最短）にして試行回数を増やす
+2. **1回の実行を `LOOP_MINUTES` のあいだ持続**させ、`INTERVAL_MINUTES` ごとに
+   生成とアップロードを繰り返す
+
+これにより、スケジュールが平均1.8時間に1回しか届かなくても、実際の更新間隔は
+`INTERVAL_MINUTES`（既定15分）で決まる。新しい実行が始まれば `concurrency` により
+古いループは打ち切られるので、二重に更新されることはない。
+
+間隔を変えたい場合は `.github/workflows/deploy.yml` の `INTERVAL_MINUTES` と
+`LOOP_MINUTES` を調整する（`LOOP_MINUTES` はジョブの `timeout-minutes` 未満にする）。
 
 ## AWS インフラ
 
