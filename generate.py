@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
@@ -132,7 +131,6 @@ def _render(
     template = env.get_template("index.html.j2")
     return template.render(
         sources=sources,
-        source_keys_json=json.dumps([s["key"] for s in sources]),
         # 掲載日がこれと一致する記事を「本日分」として強調する
         today=datetime.now(JST).strftime("%Y-%m-%d"),
         schedule=schedule,
