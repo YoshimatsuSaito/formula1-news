@@ -194,7 +194,6 @@
       padding: 20px 22px 18px;
       transition: opacity 0.18s;
     }
-    .source-block.muted { opacity: 0.18; pointer-events: none; }
 
     .source-head {
       display: flex;
@@ -604,14 +603,14 @@
     <div class="chips">
       <button
         class="chip"
-        :aria-pressed="String(allActive)"
-        @click="toggleAll()"
+        :aria-pressed="String(isAll())"
+        @click="showAll()"
       >ALL</button>
       {% for source in sources %}
       <button
         class="chip"
-        :aria-pressed="String(active.has('{{ source.key }}'))"
-        @click="toggle('{{ source.key }}')"
+        :aria-pressed="String(isSelected('{{ source.key }}'))"
+        @click="select('{{ source.key }}')"
       >{{ source.name }}</button>
       {% endfor %}
     </div>
@@ -620,10 +619,7 @@
 
 <main x-show="tab === 'news'">
   {% for source in sources %}
-  <div
-    class="source-block"
-    :class="{ muted: !active.has('{{ source.key }}') }"
-  >
+  <div class="source-block" x-show="visible('{{ source.key }}')">
     <div class="source-head">
       <a class="source-name" href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.name }}</a>
       <span class="source-count">{{ source.articles | length }}</span>
@@ -805,29 +801,25 @@
 <footer>AUTO-UPDATED EVERY 30 MIN &nbsp;&middot;&nbsp; GITHUB ACTIONS + S3</footer>
 
 <script>
-  const SOURCE_KEYS = {{ source_keys_json }};
-
   function app() {
     const saved = localStorage.getItem('f1-theme');
     const osLight = window.matchMedia('(prefers-color-scheme: light)').matches;
     return {
       theme:  saved || (osLight ? 'light' : 'dark'),
       tab:    'news',
-      active: new Set(SOURCE_KEYS),
+      // null = すべてのソースを表示。ソース名を入れるとそれだけを表示する
+      selected: null,
 
-      get allActive() { return this.active.size === SOURCE_KEYS.length; },
+      isAll()          { return this.selected === null; },
+      isSelected(key)  { return this.selected === key; },
+      visible(key)     { return this.selected === null || this.selected === key; },
 
-      toggle(key) {
-        if (this.active.has(key)) {
-          if (this.active.size > 1) { const s = new Set(this.active); s.delete(key); this.active = s; }
-        } else {
-          this.active = new Set([...this.active, key]);
-        }
+      select(key) {
+        // 選択中のものをもう一度押したら全件表示に戻す
+        this.selected = this.selected === key ? null : key;
       },
 
-      toggleAll() {
-        this.active = this.allActive ? new Set([SOURCE_KEYS[0]]) : new Set(SOURCE_KEYS);
-      },
+      showAll() { this.selected = null; },
 
       toggleTheme() {
         this.theme = this.theme === 'dark' ? 'light' : 'dark';
