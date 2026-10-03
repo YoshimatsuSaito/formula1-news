@@ -5,6 +5,7 @@
 実行して実際の HTML をログで確認できるようにしてある。
 
     python tools/inspect_source.py "F1速報,TopNews"
+    python tools/inspect_source.py "F1-Gate" "article.fv-sub a|a:has(h3)"
 
 HTML ソースは記事リンク周辺の構造を、RSS ソースはフィードの取得可否と
 中身の件数を出す。
@@ -102,6 +103,16 @@ def _survey(soup) -> None:
         print(f"  <{tag}> {len(found)}個  class={dict(classes)}")
         for h in found[:2]:
             print(f"      {' '.join(str(h).split())[:240]}")
+            # 見出しを包んでいる要素。記事カードの構造が分かる
+            node, depth = h.parent, 1
+            while node is not None and depth <= 3:
+                label = f"<{node.name}"
+                if node.get("class"):
+                    label += f" class={' '.join(node['class'])}"
+                if node.name == "a":
+                    label += f" href={node.get('href')}"
+                print(f"        祖先[{depth}] {label}>")
+                node, depth = node.parent, depth + 1
 
     # <time> の周辺に記事リンクがあるはずなので、その祖先をたどる
     times = soup.find_all("time")
@@ -133,7 +144,27 @@ def _survey(soup) -> None:
         print(f"  {n:4d}  {pat}")
 
 
-def inspect(name: str, site) -> None:
+def try_selectors(soup, selectors: list[str]) -> None:
+    """セレクタ候補を当ててみて、件数と中身を出す。
+
+    config を書き換えずに候補を比べられるようにしてある。
+    """
+    print("\n--- セレクタ候補 ---")
+    for sel in selectors:
+        try:
+            found = soup.select(sel)
+        except Exception as e:
+            print(f"\n  {sel!r}: 不正なセレクタ ({e})")
+            continue
+        print(f"\n  {sel!r}: {len(found)}個")
+        for el in found[:4]:
+            href = el.get("href") if el.name == "a" else None
+            print(f"      {el.get_text(' ', strip=True)[:60]!r}")
+            if href:
+                print(f"        href={href[:100]}")
+
+
+def inspect(name: str, site, selectors: list[str] | None = None) -> None:
     print(f"\n{'=' * 72}")
     print(f"{name}  ({site.source})  {site.news_home}")
     print("=" * 72)
@@ -156,6 +187,9 @@ def inspect(name: str, site) -> None:
 
     els = soup.select(site.scrape_link)
     print(f"\n記事リンク ({site.scrape_link}): {len(els)}個")
+
+    if selectors:
+        try_selectors(soup, selectors)
 
     if not els:
         # セレクタが当たらない = ページ構造が変わった。
@@ -182,6 +216,10 @@ def inspect(name: str, site) -> None:
 def main() -> None:
     wanted = [s.strip() for s in (sys.argv[1] if len(sys.argv) > 1 else "").split(",")]
     wanted = [s for s in wanted if s]
+    # 第2引数は試したいセレクタ候補 ("|" 区切り)。セレクタ自体にカンマを
+    # 使えるようにしたいので区切りはカンマではない
+    raw = sys.argv[2] if len(sys.argv) > 2 else ""
+    selectors = [s.strip() for s in raw.split("|") if s.strip()]
     config = load_config(Path("./config/config.yaml"))
 
     if not wanted:
@@ -193,7 +231,7 @@ def main() -> None:
             print(f"\n[SKIP] {name}: config に存在しません")
             continue
         try:
-            inspect(name, config[name])
+            inspect(name, config[name], selectors)
         except Exception as e:
             print(f"[FAIL] {name}: {e}")
 
