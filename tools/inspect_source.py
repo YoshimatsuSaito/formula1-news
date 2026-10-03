@@ -9,9 +9,12 @@
 HTML ソースは記事リンク周辺の構造を、RSS ソースはフィードの取得可否と
 中身の件数を出す。
 """
+import re
 import sys
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup as bs
@@ -24,6 +27,20 @@ from modules.scraper import _HEADERS, _markup  # noqa: E402
 _ANCESTORS = 3      # 記事リンクから何階層上まで見るか
 _SNIPPET = 700      # 1要素あたりに出す HTML の長さ
 _ARTICLES = 3       # 何記事ぶん出すか
+
+
+def _probe(url: str, accept: str | None = None) -> requests.Response | None:
+    """URL を叩いてステータスだけ出す。到達性の切り分けに使う。"""
+    headers = dict(_HEADERS)
+    if accept:
+        headers["Accept"] = accept
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+    except Exception as e:
+        print(f"  {url}\n    ERROR {type(e).__name__}: {e}")
+        return None
+    print(f"  {url}\n    HTTP {r.status_code} / {r.headers.get('Content-Type')} / {len(r.content)} bytes")
+    return r
 
 
 def _inspect_rss(site) -> None:
@@ -39,6 +56,14 @@ def _inspect_rss(site) -> None:
         # 拒否されている場合は本文に理由が書かれていることがある
         print("\n本文の先頭:")
         print("  " + " ".join(r.text[:500].split()))
+        # フィードだけの問題か、サイト全体が拒否しているのかを見る。
+        # 一覧ページが取れるなら HTML スクレイピングへ切り替える道がある
+        print("\n同じサイトの他のパス:")
+        _FEED = "application/rss+xml, application/atom+xml, */*"
+        _probe(site.news_home)
+        _probe(site.news_home.rstrip("/") + "/feed", _FEED)
+        root = "/".join(site.news_home.split("/")[:3])
+        _probe(root)
         return
 
     try:
@@ -61,6 +86,51 @@ def _inspect_rss(site) -> None:
             print(f"{label}: {len(found)}件")
             print("  先頭の中身:")
             print("    " + " ".join(ET.tostring(found[0], encoding="unicode")[:600].split()))
+
+
+def _survey(soup) -> None:
+    """セレクタが一致しないときに、組み直すための材料を出す。"""
+    print("\n--- 構造の調査 ---")
+
+    # 見出しに使われているタグとクラス。記事タイトルは見出しに入っていることが多い
+    print("\n見出し要素:")
+    for tag in ("h1", "h2", "h3", "h4"):
+        found = soup.find_all(tag)
+        if not found:
+            continue
+        classes = Counter(" ".join(h.get("class") or []) for h in found)
+        print(f"  <{tag}> {len(found)}個  class={dict(classes)}")
+        for h in found[:2]:
+            print(f"      {' '.join(str(h).split())[:240]}")
+
+    # <time> の周辺に記事リンクがあるはずなので、その祖先をたどる
+    times = soup.find_all("time")
+    if times:
+        print("\n<time> の祖先と、その中のリンク:")
+        for t in times[:2]:
+            node, depth = t.parent, 1
+            while node is not None and depth <= 4:
+                label = f"<{node.name}"
+                if node.get("class"):
+                    label += f" class={' '.join(node['class'])}"
+                if node.get("id"):
+                    label += f" id={node['id']}"
+                links = node.find_all("a", href=True)
+                print(f"  [{depth}] {label}>  リンク{len(links)}個")
+                for a in links[:3]:
+                    print(f"        {a.get('href')[:90]}  {a.get_text(' ', strip=True)[:50]!r}")
+                node, depth = node.parent, depth + 1
+            print()
+
+    # href のパターン。記事 URL の形を掴む
+    print("href のパターン上位:")
+    pats = Counter()
+    for a in soup.find_all("a", href=True):
+        # 末尾のスラッグを畳んで形だけ残す
+        pat = re.sub(r"[^/]{4,}", "*", urlparse(a["href"]).path)
+        pats[pat] += 1
+    for pat, n in pats.most_common(12):
+        print(f"  {n:4d}  {pat}")
 
 
 def inspect(name: str, site) -> None:
@@ -86,6 +156,12 @@ def inspect(name: str, site) -> None:
 
     els = soup.select(site.scrape_link)
     print(f"\n記事リンク ({site.scrape_link}): {len(els)}個")
+
+    if not els:
+        # セレクタが当たらない = ページ構造が変わった。
+        # 新しいセレクタを決めるための材料を出す
+        _survey(soup)
+        return
 
     for el in els[:_ARTICLES]:
         print(f"\n{'-' * 72}")
