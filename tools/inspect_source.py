@@ -14,6 +14,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -23,7 +24,7 @@ from bs4 import BeautifulSoup as bs
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.load_config import load_config  # noqa: E402
-from modules.scraper import _HEADERS, _markup  # noqa: E402
+from modules.scraper import _HEADERS, _markup, scrape_news  # noqa: E402
 
 _ANCESTORS = 3      # 記事リンクから何階層上まで見るか
 _SNIPPET = 700      # 1要素あたりに出す HTML の長さ
@@ -161,6 +162,31 @@ def _survey(soup) -> None:
         print(f"  {n:4d}  {pat}")
 
 
+def dry_run(name: str, site, selector: str) -> None:
+    """候補セレクタで実際のスクレイパを走らせ、出来上がる記事一覧を見る。
+
+    件数だけでなく掲載日まで取れるかを、本番と同じコードで確かめる。
+    セレクタに "|" が使えないので、タイトル側と リンク側は ">>" で区切る
+    (省略時は同じセレクタを両方に使う)。
+    """
+    title_sel, _, link_sel = selector.partition(">>")
+    candidate = replace(
+        site,
+        scrape_title=title_sel.strip(),
+        scrape_link=(link_sel.strip() or title_sel.strip()),
+    )
+    print(f"\n  title={candidate.scrape_title!r} link={candidate.scrape_link!r}")
+    try:
+        result = scrape_news(name=name, site_structure=candidate)
+    except Exception as e:
+        print(f"    FAIL {type(e).__name__}: {e}")
+        return
+    print(f"    {len(result.list_title)}件 / 掲載日あり {sum(1 for d in result.list_date if d)}件")
+    for t, l, d in zip(result.list_title, result.list_link, result.list_date):
+        print(f"      [{d or '----------'}] {t[:52]}")
+        print(f"                   {l[:95]}")
+
+
 def try_selectors(soup, selectors: list[str]) -> None:
     """セレクタ候補を当ててみて、件数と中身を出す。
 
@@ -207,6 +233,9 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
 
     if selectors:
         try_selectors(soup, selectors)
+        print("\n--- 候補セレクタで実際に取得してみる ---")
+        for sel in selectors:
+            dry_run(name, site, sel)
 
     if not els:
         # セレクタが当たらない = ページ構造が変わった。
