@@ -22,13 +22,6 @@ sites:
     scrape_link: 'a[href*="news/sp/body"], a[href*="news%2Fsp%2Fbody"]'
     get_link: "lambda x: x['href']"
 
-  TopNews:
-    # HTML scraping は GitHub Actions から 429 (Too Many Requests) を返される
-    # ため RSS に切替（F1情報通 と同じ事情）
-    source: rss
-    news_home: "https://topnews.jp/category/news/f1"
-    rss_url: "https://topnews.jp/feed"
-
   Formula1-Data:
     # 記事もカテゴリメニューも同じ /article/<slug> 形式で、CSS では区別できない。
     # 実際 HTML scraping では10件中8件がメニュー項目(「F1」「インディカー」等)に
@@ -90,12 +83,23 @@ sites:
 
   F1-Gate:
     # RSS feed (/feed/) は存在しない（WordPress形式でないため）→ HTML scraping
+    #
+    # トップページが改装され .content h2 a は一致しなくなった。現在の構造は
+    # 記事カード全体が <a> で、その中に見出しと <time datetime> が入る:
+    #   article.fv-lead > a > div.hero-body > h2   (大きいカード2件)
+    #   article.fv-sub  > a > h3 と div.sub > time (小さいカード5件)
+    # 計7件。ページ内で <time datetime> を持つのはこのカード群だけなので、
+    # 件数よりも掲載日の正確さを取ってここに絞っている。
+    #
+    # 本文一覧 (section.sec ul.list-l) は20件あるが、リンクのテキストに
+    # 本文要約が続くためタイトルが汚れ、掲載日も本文中のレース日を
+    # 拾ってしまう。/news/ の ul.rank--latest も掲載日が1日ずれる。
     source: html
     prefix_home: ""
     news_home: "https://f1-gate.com"
-    scrape_title: ".content h2 a"
+    scrape_title: "article.fv-lead h2, article.fv-sub h3"
     get_title: "lambda x: x.get_text(strip=True)"
-    scrape_link: ".content h2 a"
+    scrape_link: "article.fv-lead > a, article.fv-sub > a"
     get_link: "lambda x: x.attrs['href']"
 
   F1情報通:
