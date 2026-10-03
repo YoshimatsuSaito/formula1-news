@@ -267,6 +267,8 @@ def main() -> None:
     # 使えるようにしたいので区切りはカンマではない
     raw = sys.argv[2] if len(sys.argv) > 2 else ""
     selectors = [s.strip() for s in raw.split("|") if s.strip()]
+    # 第3引数は一覧ページの URL 差し替え
+    url_override = sys.argv[3].strip() if len(sys.argv) > 3 else ""
     config = load_config(Path("./config/config.yaml"))
 
     if not wanted:
@@ -277,8 +279,13 @@ def main() -> None:
         if name not in config:
             print(f"\n[SKIP] {name}: config に存在しません")
             continue
+        site = config[name]
+        # 一覧ページを差し替えて試せるようにする。トップより記事一覧
+        # ページのほうが件数が多いことがある
+        if url_override:
+            site = replace(site, news_home=url_override)
         try:
-            inspect(name, config[name], selectors)
+            inspect(name, site, selectors)
         except Exception as e:
             print(f"[FAIL] {name}: {e}")
 

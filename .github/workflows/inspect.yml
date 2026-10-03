@@ -15,6 +15,10 @@ on:
         description: 'HTML ソースで試すセレクタ候補（"|" 区切り。空なら試さない）'
         required: false
         default: ''
+      url:
+        description: '一覧ページの URL を差し替える（空なら config のまま）'
+        required: false
+        default: ''
       lambda_logs:
         description: 'Lambda を実行してそのログも出す（AWS 側の見え方を確認する）'
         type: boolean
@@ -50,7 +54,8 @@ jobs:
         env:
           SOURCES: ${{ inputs.sources }}
           SELECTORS: ${{ inputs.selectors }}
-        run: python tools/inspect_source.py "$SOURCES" "$SELECTORS"
+          URL: ${{ inputs.url }}
+        run: python tools/inspect_source.py "$SOURCES" "$SELECTORS" "$URL"
 
       # 次に Lambda のネットワークから見た状態。IP で弾かれている場合、
       # ここだけ失敗するので切り分けになる
