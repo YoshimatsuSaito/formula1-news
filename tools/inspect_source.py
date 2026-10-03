@@ -4,9 +4,13 @@
 開発環境から対象サイトへ到達できないことがあるため、GitHub Actions 上で
 実行して実際の HTML をログで確認できるようにしてある。
 
-    python tools/inspect_source.py "F1速報,skysports"
+    python tools/inspect_source.py "F1速報,TopNews"
+
+HTML ソースは記事リンク周辺の構造を、RSS ソースはフィードの取得可否と
+中身の件数を出す。
 """
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import requests
@@ -22,13 +26,50 @@ _SNIPPET = 700      # 1要素あたりに出す HTML の長さ
 _ARTICLES = 3       # 何記事ぶん出すか
 
 
+def _inspect_rss(site) -> None:
+    """フィードが取れるか、どの形式で何件入っているかを見る。"""
+    print(f"feed: {site.rss_url}")
+    r = requests.get(
+        site.rss_url,
+        headers={**_HEADERS, "Accept": "application/rss+xml, application/atom+xml, */*"},
+        timeout=20,
+    )
+    print(f"HTTP {r.status_code} / {r.headers.get('Content-Type')} / {len(r.content)} bytes")
+    if r.status_code != 200:
+        # 拒否されている場合は本文に理由が書かれていることがある
+        print("\n本文の先頭:")
+        print("  " + " ".join(r.text[:500].split()))
+        return
+
+    try:
+        root = ET.fromstring(r.content)
+    except ET.ParseError as e:
+        print(f"\nXML として解釈できない: {e}")
+        print("  " + " ".join(r.text[:500].split()))
+        return
+
+    tag = root.tag.split("}")[-1] if "}" in root.tag else root.tag
+    print(f"\nroot タグ: {tag}")
+    # 形式ごとに記事要素の数を数える
+    for label, path in [
+        ("RSS2 item", ".//item"),
+        ("Atom entry", ".//{http://www.w3.org/2005/Atom}entry"),
+        ("RDF item", ".//{http://purl.org/rss/1.0/}item"),
+    ]:
+        found = root.findall(path)
+        if found:
+            print(f"{label}: {len(found)}件")
+            print("  先頭の中身:")
+            print("    " + " ".join(ET.tostring(found[0], encoding="unicode")[:600].split()))
+
+
 def inspect(name: str, site) -> None:
     print(f"\n{'=' * 72}")
     print(f"{name}  ({site.source})  {site.news_home}")
     print("=" * 72)
 
-    if site.source != "html":
-        print("RSS ソースなので対象外")
+    if site.source == "rss":
+        _inspect_rss(site)
         return
 
     r = requests.get(site.news_home, headers=_HEADERS, timeout=20)

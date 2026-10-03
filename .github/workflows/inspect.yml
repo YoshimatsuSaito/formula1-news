@@ -11,12 +11,23 @@ on:
         description: '調べるソース名（カンマ区切り。例: F1速報,skysports）'
         required: true
         default: 'F1速報,skysports'
+      lambda_logs:
+        description: 'Lambda を実行してそのログも出す（AWS 側の見え方を確認する）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  STACK_NAME: f1-news-website
+  AWS_REGION: ap-northeast-1
 
 jobs:
   inspect:
     name: Fetch and dump HTML
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -29,8 +40,32 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # まず Actions のネットワークから見た状態
       - name: Inspect
         # 入力は env 経由で渡す（run に直接埋めるとスクリプト実行の余地ができる）
         env:
           SOURCES: ${{ inputs.sources }}
         run: python tools/inspect_source.py "$SOURCES"
+
+      # 次に Lambda のネットワークから見た状態。IP で弾かれている場合、
+      # ここだけ失敗するので切り分けになる
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: inputs.lambda_logs
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Invoke Lambda and show its log
+        if: inputs.lambda_logs
+        run: |
+          set -euo pipefail
+          FUNC=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ScraperFunctionName`].OutputValue' \
+            --output text)
+          echo "function: $FUNC"
+          # --log-type Tail で実行ログの末尾が応答に入る
+          aws lambda invoke --function-name "$FUNC" \
+            --cli-binary-format raw-in-base64-out --payload '{}' \
+            --log-type Tail --query LogResult --output text response.json \
+            | base64 -d
