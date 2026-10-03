@@ -133,8 +133,25 @@ def _survey(soup) -> None:
                 node, depth = node.parent, depth + 1
             print()
 
+    # 記事リンクがどの入れ物に、いくつ入っているか。
+    # 一覧がページ内のどこにあるかを一望できる
+    print("\nリンクの置き場所 (祖先3階層ごとの件数):")
+    places: dict[str, list] = {}
+    for a in soup.find_all("a", href=True):
+        chain, node, depth = [], a.parent, 0
+        while node is not None and depth < 3:
+            label = node.name
+            if node.get("class"):
+                label += "." + ".".join(node["class"])
+            chain.append(label)
+            node, depth = node.parent, depth + 1
+        places.setdefault(" < ".join(chain), []).append(a)
+    for sig, links in sorted(places.items(), key=lambda kv: -len(kv[1]))[:12]:
+        print(f"  {len(links):4d}  {sig}")
+        print(f"        例: {links[0].get('href')[:80]}  {links[0].get_text(' ', strip=True)[:40]!r}")
+
     # href のパターン。記事 URL の形を掴む
-    print("href のパターン上位:")
+    print("\nhref のパターン上位:")
     pats = Counter()
     for a in soup.find_all("a", href=True):
         # 末尾のスラッグを畳んで形だけ残す
