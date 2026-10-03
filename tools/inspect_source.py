@@ -237,9 +237,10 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
         for sel in selectors:
             dry_run(name, site, sel)
 
-    if not els:
-        # セレクタが当たらない = ページ構造が変わった。
-        # 新しいセレクタを決めるための材料を出す
+    # セレクタが当たらない = ページ構造が変わった。
+    # 新しいセレクタを決めるための材料を出す。候補を渡したときは
+    # その結果を読みたいので、長い調査結果は出さない
+    if not els and not selectors:
         _survey(soup)
         return
 
