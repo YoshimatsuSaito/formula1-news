@@ -24,11 +24,21 @@ from bs4 import BeautifulSoup as bs
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.load_config import load_config  # noqa: E402
-from modules.scraper import _HEADERS, _markup, scrape_news  # noqa: E402
+from modules.scraper import (  # noqa: E402
+    _HEADERS,
+    _HEADING_LOOKBACK,
+    _heading_date,
+    _html_date,
+    _html_text_date,
+    _markup,
+    _parse_heading_date,
+    scrape_news,
+)
 
 _ANCESTORS = 3      # 記事リンクから何階層上まで見るか
 _SNIPPET = 700      # 1要素あたりに出す HTML の長さ
 _ARTICLES = 3       # 何記事ぶん出すか
+_ARTICLES_DATE = 4  # 掲載日の出どころを何記事ぶん出すか
 
 
 def _probe(url: str, accept: str | None = None) -> requests.Response | None:
@@ -187,6 +197,36 @@ def dry_run(name: str, site, selector: str) -> None:
         print(f"                   {l[:95]}")
 
 
+def date_trace(site, soup) -> None:
+    """記事ごとに、掲載日をどこから読んだのかを並べる。
+
+    掲載日の補完は time 要素 → 周辺テキスト → 直前の見出し の順に試すので、
+    どの段で何を拾ったかが分からないと誤った日付の出どころを追えない。
+    """
+    print("\n--- 掲載日の出どころ ---")
+    els, seen = [], set()
+    for el in soup.select(site.scrape_link):
+        link = el.get("href")
+        if link and link not in seen:
+            seen.add(link)
+            els.append(el)
+
+    for el in els[:_ARTICLES_DATE]:
+        print(f"\n  記事: {el.get_text(' ', strip=True)[:50]}")
+        print(f"    time要素      : {_html_date(el)!r}")
+        print(f"    周辺テキスト  : {_html_text_date(el)!r}")
+        print(f"    直前の見出し  : {_heading_date(el)!r}")
+        # _heading_date が実際に見ている見出しを、同じ順で出す
+        heads = el.find_all_previous(
+            ["h1", "h2", "h3", "h4", "h5", "h6"], limit=_HEADING_LOOKBACK
+        )
+        for h in heads:
+            text = h.get_text(" ", strip=True)
+            parsed = _parse_heading_date(text)
+            mark = "  ★一致" if parsed else ""
+            print(f"      <{h.name}> {text[:46]!r} -> {parsed}{mark}")
+
+
 def try_selectors(soup, selectors: list[str]) -> None:
     """セレクタ候補を当ててみて、件数と中身を出す。
 
@@ -230,6 +270,9 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
 
     els = soup.select(site.scrape_link)
     print(f"\n記事リンク ({site.scrape_link}): {len(els)}個")
+
+    if els:
+        date_trace(site, soup)
 
     if selectors:
         try_selectors(soup, selectors)
