@@ -44,7 +44,7 @@ from modules.scraper import (  # noqa: E402
 _ANCESTORS = 3      # 記事リンクから何階層上まで見るか
 _SNIPPET = 700      # 1要素あたりに出す HTML の長さ
 _ARTICLES = 3       # 何記事ぶん出すか
-_ARTICLES_DATE = 4  # 掲載日の出どころを何記事ぶん出すか
+_ARTICLES_DATE = 2  # 掲載日の出どころを何記事ぶん出すか
 
 # 祖先の HTML ダンプは量が多く、他の出力をログから押し出してしまうので
 # 既定では出さない
@@ -343,6 +343,10 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
 
     # 祖先の HTML ダンプが長いので、読みたいものを最後に置く
     date_trace(site, soup)
+
+    # config そのままで取得した結果。これが本番の見え方になる
+    print("\n--- config のまま取得した結果 ---")
+    dry_run(name, site, f"{site.scrape_title}>>{site.scrape_link}")
 
 
 def main() -> None:
