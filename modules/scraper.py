@@ -135,7 +135,8 @@ def _fmt_date(raw: str) -> str:
     # タイムゾーンの無い日時は UTC とみなす（JST に寄せると未来日付になりうる）
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(_JST).strftime("%Y-%m-%d")
+    d = _not_future(dt.astimezone(_JST).date())
+    return d.isoformat() if d else ""
 
 
 def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructure:
@@ -165,8 +166,8 @@ def _scrape_html(name: str, site: SiteStructure, max_num: int) -> ResultStructur
     # time 要素で取れなかった分を、周辺テキスト → 日付見出しの順に補う
     dates = _dates_from_raw(picked_raw)
     dates = [
-        d or _html_text_date(el) or _heading_date(el)
-        for d, el in zip(dates, picked_els)
+        d or _html_text_date(el, title, site.scrape_link) or _heading_date(el)
+        for d, title, el in zip(dates, list_title, picked_els)
     ]
 
     return ResultStructure(
@@ -212,6 +213,10 @@ _RE_MDY_EN = re.compile(r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(20\d{2})\b")
 
 def _parse_text_date(text: str) -> date | None:
     """「2026年8月30日」「8月30日」「30 August 2026」等の表記を日付にする。"""
+    return _not_future(_parse_text_date_raw(text))
+
+
+def _parse_text_date_raw(text: str) -> date | None:
     m = _RE_YMD.search(text)
     if m:
         return _safe_date(int(m[1]), int(m[2]), int(m[3]))
@@ -249,20 +254,44 @@ def _safe_date(year: int, month: int, day: int) -> date | None:
         return None
 
 
-def _html_text_date(el) -> str:
+# 時差のある配信元が「今」を未来の日付で書くことがあるため1日だけ許容する
+_FUTURE_SLACK = timedelta(days=1)
+
+
+def _not_future(d: date | None) -> date | None:
+    """未来の掲載日は捨てる。
+
+    掲載日が未来になることは無いので、そう読めたなら別の数字を日付と
+    取り違えている。放置すると日付順の並びでそのソースが先頭に居座り、
+    本日分の強調も効かなくなる。
+    """
+    if d is None:
+        return None
+    return None if d > datetime.now(_JST).date() + _FUTURE_SLACK else d
+
+
+def _html_text_date(el, title: str, link_sel: str) -> str:
     """time 要素を持たないサイト向けに、リンク周辺のテキストから日付を読む。
 
-    記事タイトル自体は除いて周囲だけを見る。「8月29日開催」のように
-    タイトルに含まれる日付を掲載日と取り違えないため。
+    除くのは記事タイトルだけにする。「8月29日開催」のようにタイトルに
+    含まれる日付を掲載日と取り違えないためだが、カードの中にタイトルと
+    並べて掲載日が書かれている作りもあるので、リンクの中身まで丸ごと
+    除いてしまうと自分の日付を見落とす。
+
+    探索はその記事だけを含む範囲に限る。複数記事を含む要素のテキストには
+    他の記事の日付が混ざっており、それを掲載日として読んでしまう。
     """
-    own = el.get_text(" ", strip=True)
-    node = el.parent
-    for _ in range(2):
+    # リンクの中にも掲載日が書かれていることがあるので、まず自分自身を見る
+    node = el
+    for _ in range(3):
         if node is None:
             break
+        # 他の記事を含み始めたら、そこから先のテキストは自分のものではない
+        if len(node.select(link_sel)) > 1:
+            break
         text = node.get_text(" ", strip=True)
-        if own:
-            text = text.replace(own, " ")
+        if title:
+            text = text.replace(title, " ")
         found = _parse_text_date(text)
         if found:
             return found.isoformat()

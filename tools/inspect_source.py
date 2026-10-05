@@ -10,6 +10,7 @@
 HTML ソースは記事リンク周辺の構造を、RSS ソースはフィードの取得可否と
 中身の件数を出す。
 """
+import os
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -24,11 +25,38 @@ from bs4 import BeautifulSoup as bs
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from modules.load_config import load_config  # noqa: E402
-from modules.scraper import _HEADERS, _markup, scrape_news  # noqa: E402
+from modules.scraper import (  # noqa: E402
+    _HEADERS,
+    _HEADING_LOOKBACK,
+    _heading_date,
+    _html_date,
+    _html_text_date,
+    _markup,
+    _parse_heading_date,
+    _parse_text_date,
+    _RE_DMY_EN,
+    _RE_MDY_EN,
+    _RE_MD_JP,
+    _RE_YMD,
+    scrape_news,
+)
 
 _ANCESTORS = 3      # 記事リンクから何階層上まで見るか
 _SNIPPET = 700      # 1要素あたりに出す HTML の長さ
 _ARTICLES = 3       # 何記事ぶん出すか
+_ARTICLES_DATE = 2  # 掲載日の出どころを何記事ぶん出すか
+
+# 祖先の HTML ダンプは量が多く、他の出力をログから押し出してしまうので
+# 既定では出さない
+_HTML_DUMP = os.environ.get("INSPECT_HTML_DUMP") == "1"
+
+# 日付表記のどれに一致したかを示すため
+_DATE_PATTERNS = [
+    ("年月日", _RE_YMD),
+    ("月日", _RE_MD_JP),
+    ("日 Month 年", _RE_DMY_EN),
+    ("Month 日, 年", _RE_MDY_EN),
+]
 
 
 def _probe(url: str, accept: str | None = None) -> requests.Response | None:
@@ -187,6 +215,60 @@ def dry_run(name: str, site, selector: str) -> None:
         print(f"                   {l[:95]}")
 
 
+def date_trace(site, soup) -> None:
+    """記事ごとに、掲載日をどこから読んだのかを並べる。
+
+    掲載日の補完は time 要素 → 周辺テキスト → 直前の見出し の順に試すので、
+    どの段で何を拾ったかが分からないと誤った日付の出どころを追えない。
+    """
+    print("\n--- 掲載日の出どころ ---")
+    els, seen = [], set()
+    for el in soup.select(site.scrape_link):
+        link = el.get("href")
+        if link and link not in seen:
+            seen.add(link)
+            els.append(el)
+
+    for el in els[:_ARTICLES_DATE]:
+        print(f"\n  記事: {el.get_text(' ', strip=True)[:50]}")
+        print(f"    time要素      : {_html_date(el)!r}")
+        title = site.get_title(el) if site.get_title else el.get_text(" ", strip=True)
+        print(f"    周辺テキスト  : {_html_text_date(el, title, site.scrape_link)!r}")
+        # 周辺テキストが何を見て何を拾ったのか。祖先が複数記事を含んで
+        # いれば、拾った日付は他の記事のものかもしれない
+        node = el
+        for lv in range(0, 3):
+            if node is None:
+                break
+            arts = len(node.select(site.scrape_link))
+            text = node.get_text(" ", strip=True)
+            if title:
+                text = text.replace(title, " ")
+            found = _parse_text_date(text)
+            print(f"      祖先[{lv}] <{node.name}> 記事リンク{arts}個 -> {found}"
+                  f"{'  (複数記事を含むので打ち切り)' if arts > 1 else ''}")
+            print(f"        見たテキスト: {text[:110]!r}")
+            if found:
+                # どの表記に一致したのか。前後も出して出どころを特定する
+                for label, rx in _DATE_PATTERNS:
+                    m = rx.search(text)
+                    if m:
+                        around = text[max(0, m.start() - 35):m.end() + 35]
+                        print(f"        {label} が {m.group(0)!r} に一致"
+                              f" / 前後: {around!r}")
+            node = node.parent
+        print(f"    直前の見出し  : {_heading_date(el)!r}")
+        # _heading_date が実際に見ている見出しを、同じ順で出す
+        heads = el.find_all_previous(
+            ["h1", "h2", "h3", "h4", "h5", "h6"], limit=_HEADING_LOOKBACK
+        )
+        for h in heads:
+            text = h.get_text(" ", strip=True)
+            parsed = _parse_heading_date(text)
+            mark = "  ★一致" if parsed else ""
+            print(f"      <{h.name}> {text[:46]!r} -> {parsed}{mark}")
+
+
 def try_selectors(soup, selectors: list[str]) -> None:
     """セレクタ候補を当ててみて、件数と中身を出す。
 
@@ -244,7 +326,7 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
         _survey(soup)
         return
 
-    for el in els[:_ARTICLES]:
+    for el in (els[:_ARTICLES] if _HTML_DUMP else []):
         print(f"\n{'-' * 72}")
         print(f"記事: {el.get_text(' ', strip=True)[:60]}")
         node, depth = el, 0
@@ -258,6 +340,13 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
             if depth > 0:
                 print(f"      {html[:_SNIPPET]}")
             node, depth = node.parent, depth + 1
+
+    # 祖先の HTML ダンプが長いので、読みたいものを最後に置く
+    date_trace(site, soup)
+
+    # config そのままで取得した結果。これが本番の見え方になる
+    print("\n--- config のまま取得した結果 ---")
+    dry_run(name, site, f"{site.scrape_title}>>{site.scrape_link}")
 
 
 def main() -> None:
