@@ -271,9 +271,6 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
     els = soup.select(site.scrape_link)
     print(f"\n記事リンク ({site.scrape_link}): {len(els)}個")
 
-    if els:
-        date_trace(site, soup)
-
     if selectors:
         try_selectors(soup, selectors)
         print("\n--- 候補セレクタで実際に取得してみる ---")
@@ -301,6 +298,9 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
             if depth > 0:
                 print(f"      {html[:_SNIPPET]}")
             node, depth = node.parent, depth + 1
+
+    # 祖先の HTML ダンプが長いので、読みたいものを最後に置く
+    date_trace(site, soup)
 
 
 def main() -> None:
