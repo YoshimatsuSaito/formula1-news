@@ -32,6 +32,7 @@ from modules.scraper import (  # noqa: E402
     _html_text_date,
     _markup,
     _parse_heading_date,
+    _parse_text_date,
     scrape_news,
 )
 
@@ -215,6 +216,21 @@ def date_trace(site, soup) -> None:
         print(f"\n  記事: {el.get_text(' ', strip=True)[:50]}")
         print(f"    time要素      : {_html_date(el)!r}")
         print(f"    周辺テキスト  : {_html_text_date(el)!r}")
+        # 周辺テキストが何を見て何を拾ったのか。祖先が複数記事を含んで
+        # いれば、拾った日付は他の記事のものかもしれない
+        own = el.get_text(" ", strip=True)
+        node = el.parent
+        for lv in range(1, 3):
+            if node is None:
+                break
+            hrefs = {a.get("href") for a in node.find_all("a", href=True)}
+            text = node.get_text(" ", strip=True)
+            if own:
+                text = text.replace(own, " ")
+            print(f"      祖先[{lv}] <{node.name}> 記事リンク{len(hrefs)}種"
+                  f" -> {_parse_text_date(text)}")
+            print(f"        見たテキスト: {text[:110]!r}")
+            node = node.parent
         print(f"    直前の見出し  : {_heading_date(el)!r}")
         # _heading_date が実際に見ている見出しを、同じ順で出す
         heads = el.find_all_previous(
