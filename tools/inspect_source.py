@@ -232,20 +232,21 @@ def date_trace(site, soup) -> None:
     for el in els[:_ARTICLES_DATE]:
         print(f"\n  記事: {el.get_text(' ', strip=True)[:50]}")
         print(f"    time要素      : {_html_date(el)!r}")
-        print(f"    周辺テキスト  : {_html_text_date(el)!r}")
+        title = site.get_title(el) if site.get_title else el.get_text(" ", strip=True)
+        print(f"    周辺テキスト  : {_html_text_date(el, title, site.scrape_link)!r}")
         # 周辺テキストが何を見て何を拾ったのか。祖先が複数記事を含んで
         # いれば、拾った日付は他の記事のものかもしれない
-        own = el.get_text(" ", strip=True)
-        node = el.parent
-        for lv in range(1, 3):
+        node = el
+        for lv in range(0, 3):
             if node is None:
                 break
-            hrefs = {a.get("href") for a in node.find_all("a", href=True)}
+            arts = len(node.select(site.scrape_link))
             text = node.get_text(" ", strip=True)
-            if own:
-                text = text.replace(own, " ")
+            if title:
+                text = text.replace(title, " ")
             found = _parse_text_date(text)
-            print(f"      祖先[{lv}] <{node.name}> 記事リンク{len(hrefs)}種 -> {found}")
+            print(f"      祖先[{lv}] <{node.name}> 記事リンク{arts}個 -> {found}"
+                  f"{'  (複数記事を含むので打ち切り)' if arts > 1 else ''}")
             print(f"        見たテキスト: {text[:110]!r}")
             if found:
                 # どの表記に一致したのか。前後も出して出どころを特定する
