@@ -19,6 +19,10 @@ on:
         description: '一覧ページの URL を差し替える（空なら config のまま）'
         required: false
         default: ''
+      html_dump:
+        description: '記事リンク周辺の HTML も出す（量が多いので既定は off）'
+        type: boolean
+        default: false
       lambda_logs:
         description: 'Lambda を実行してそのログも出す（AWS 側の見え方を確認する）'
         type: boolean
@@ -55,6 +59,7 @@ jobs:
           SOURCES: ${{ inputs.sources }}
           SELECTORS: ${{ inputs.selectors }}
           URL: ${{ inputs.url }}
+          INSPECT_HTML_DUMP: ${{ inputs.html_dump && '1' || '0' }}
         run: python tools/inspect_source.py "$SOURCES" "$SELECTORS" "$URL"
 
       # 次に Lambda のネットワークから見た状態。IP で弾かれている場合、

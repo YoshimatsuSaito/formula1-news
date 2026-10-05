@@ -10,6 +10,7 @@
 HTML ソースは記事リンク周辺の構造を、RSS ソースはフィードの取得可否と
 中身の件数を出す。
 """
+import os
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -33,6 +34,10 @@ from modules.scraper import (  # noqa: E402
     _markup,
     _parse_heading_date,
     _parse_text_date,
+    _RE_DMY_EN,
+    _RE_MDY_EN,
+    _RE_MD_JP,
+    _RE_YMD,
     scrape_news,
 )
 
@@ -40,6 +45,18 @@ _ANCESTORS = 3      # 記事リンクから何階層上まで見るか
 _SNIPPET = 700      # 1要素あたりに出す HTML の長さ
 _ARTICLES = 3       # 何記事ぶん出すか
 _ARTICLES_DATE = 4  # 掲載日の出どころを何記事ぶん出すか
+
+# 祖先の HTML ダンプは量が多く、他の出力をログから押し出してしまうので
+# 既定では出さない
+_HTML_DUMP = os.environ.get("INSPECT_HTML_DUMP") == "1"
+
+# 日付表記のどれに一致したかを示すため
+_DATE_PATTERNS = [
+    ("年月日", _RE_YMD),
+    ("月日", _RE_MD_JP),
+    ("日 Month 年", _RE_DMY_EN),
+    ("Month 日, 年", _RE_MDY_EN),
+]
 
 
 def _probe(url: str, accept: str | None = None) -> requests.Response | None:
@@ -227,9 +244,17 @@ def date_trace(site, soup) -> None:
             text = node.get_text(" ", strip=True)
             if own:
                 text = text.replace(own, " ")
-            print(f"      祖先[{lv}] <{node.name}> 記事リンク{len(hrefs)}種"
-                  f" -> {_parse_text_date(text)}")
+            found = _parse_text_date(text)
+            print(f"      祖先[{lv}] <{node.name}> 記事リンク{len(hrefs)}種 -> {found}")
             print(f"        見たテキスト: {text[:110]!r}")
+            if found:
+                # どの表記に一致したのか。前後も出して出どころを特定する
+                for label, rx in _DATE_PATTERNS:
+                    m = rx.search(text)
+                    if m:
+                        around = text[max(0, m.start() - 35):m.end() + 35]
+                        print(f"        {label} が {m.group(0)!r} に一致"
+                              f" / 前後: {around!r}")
             node = node.parent
         print(f"    直前の見出し  : {_heading_date(el)!r}")
         # _heading_date が実際に見ている見出しを、同じ順で出す
@@ -300,7 +325,7 @@ def inspect(name: str, site, selectors: list[str] | None = None) -> None:
         _survey(soup)
         return
 
-    for el in els[:_ARTICLES]:
+    for el in (els[:_ARTICLES] if _HTML_DUMP else []):
         print(f"\n{'-' * 72}")
         print(f"記事: {el.get_text(' ', strip=True)[:60]}")
         node, depth = el, 0
